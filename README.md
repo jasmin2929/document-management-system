@@ -16,11 +16,7 @@ This repository is structured as a **Monorepo** and contains all microservices a
 - [Features](#-features)
 - [Tech Stack](#-tech-stack)
 - [Project Structure](#-project-structure)
-- [Getting Started](#-getting-started)
-- [API Documentation](#-api-documentation)
-- [Sprint Lifecycle & Milestones](#-sprint-lifecycle--milestones)
-- [Testing](#-testing)
-- [License](#-license)
+
 
 ---
 
