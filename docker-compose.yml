@@ -1,0 +1,43 @@
+services:
+  # ==========================================
+  # PostgreSQL Database Service
+  # ==========================================
+  postgres-db:
+    image: postgres:16-alpine
+    container_name: dms-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dms_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dms_password_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-dms_db}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dms_user} -d ${POSTGRES_DB:-dms_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # Spring Boot REST API Service
+  # ==========================================
+  rest-api:
+    build:
+      context: ./src/rest-api
+      dockerfile: Dockerfile
+    container_name: dms-rest-api
+    restart: always
+    ports:
+      - "${REST_API_PORT:-8081}:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-db:5432/${POSTGRES_DB:-dms_db}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-dms_user}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-dms_password_change_me}
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
