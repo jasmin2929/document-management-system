@@ -1,0 +1,51 @@
+# ==========================================
+# Operating System & IDE Files
+# ==========================================
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# ==========================================
+# Java / Spring Boot Build Artifacts
+# ==========================================
+target/
+*.class
+*.jar
+*.war
+*.ear
+.gradle/
+build/
+.settings/
+.project
+.classpath
+
+# ==========================================
+# Docker & Local Data / Volumes
+# ==========================================
+# Exclude local database/data directories if mounted as relative paths
+.docker-data/
+postgres-data/
+elasticsearch-data/
+minio-data/
+
+# ==========================================
+# Sensitive Information / Environment
+# ==========================================
+.env
+.env.local
+*.pem
+*.key
+*.pfx
+
+# ==========================================
+# Logs & Temporary Files
+# ==========================================
+*.log
+logs/
+tmp/
