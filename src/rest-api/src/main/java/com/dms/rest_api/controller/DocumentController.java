@@ -30,14 +30,17 @@ public class DocumentController {
     }
 
     /**
-     * Retrieves a list of all documents from the database.
+     * Retrieves all documents, optionally filtered by a specific category ID.
      * 
+     * @param categoryId Optional category ID to filter documents by.
      * @return 200 OK with the list of Document entities.
      */
     @GetMapping
-    public ResponseEntity<List<Document>> getAllDocuments() {
-        List<Document> documents = documentRepository.findAll();
-        return ResponseEntity.ok(documents);
+    public ResponseEntity<List<Document>> getAllDocuments(@RequestParam(required = false) Long categoryId) {
+        if (categoryId != null) {
+            return ResponseEntity.ok(documentRepository.findByCategoryId(categoryId));
+        }
+        return ResponseEntity.ok(documentRepository.findAll());
     }
 
     /**
@@ -63,6 +66,21 @@ public class DocumentController {
     public ResponseEntity<Document> createDocument(@RequestBody Document document) {
         Document savedDocument = documentRepository.save(document);
         return ResponseEntity.status(HttpStatus.CREATED).body(savedDocument);
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<Document> updateDocument(@PathVariable Long id, @RequestBody Document updatedDocument) {
+        return documentRepository.findById(id)
+            .map(existingDoc -> {
+                existingDoc.setTitle(updatedDocument.getTitle());
+                existingDoc.setContent(updatedDocument.getContent());
+                existingDoc.setSummary(updatedDocument.getSummary());
+                existingDoc.setCategory(updatedDocument.getCategory());
+                
+                Document saved = documentRepository.save(existingDoc);
+                return ResponseEntity.ok(saved);
+            })
+            .orElse(ResponseEntity.notFound().build());
     }
 
     /**

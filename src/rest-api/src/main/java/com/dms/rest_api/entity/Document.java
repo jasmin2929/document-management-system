@@ -1,5 +1,6 @@
 package com.dms.rest_api.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -59,4 +60,18 @@ public class Document {
      */
     @Builder.Default
     private LocalDateTime uploadDate = LocalDateTime.now();
+
+    /**
+     * Category to which this document belongs.
+     * 
+     * - @ManyToOne: Establishes a many-to-one relationship with the Category entity.
+     * - FetchType.LAZY: Delays loading the category from the database until explicitly accessed.
+     * - @JoinColumn: Specifies 'category_id' as the foreign key column in the 'documents' table.
+     * - @JsonIgnoreProperties("documents"): Prevents infinite recursion during JSON serialization.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "category_id")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "documents"})
+    private Category category;
+
 }

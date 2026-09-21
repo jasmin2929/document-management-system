@@ -7,9 +7,9 @@ spring:
 
   # PostgreSQL connection
   datasource:
-    url: jdbc:postgresql://localhost:5432/paperless_db
-    username: paperless_user
-    password: paperless_password_change_me
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres-db:5432/dms_db}
+    username: ${SPRING_DATASOURCE_USERNAME:jasmin}
+    password: ${SPRING_DATASOURCE_PASSWORD:swen3_dms_2901}
     driver-class-name: org.postgresql.Driver
 
   # JPA / Hibernate settings
