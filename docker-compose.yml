@@ -33,8 +33,8 @@ services:
       - "${REST_API_PORT:-8081}:8081"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-db:5432/${POSTGRES_DB:-dms_db}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-dms_user}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-dms_password_change_me}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-jasmin}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-swen3_dms_2901}
     depends_on:
       postgres-db:
         condition: service_healthy

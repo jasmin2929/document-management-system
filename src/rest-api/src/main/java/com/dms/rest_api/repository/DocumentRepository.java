@@ -3,6 +3,7 @@ package com.dms.rest_api.repository;
 import com.dms.rest_api.entity.Document;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+import java.util.List;
 
 /**
  * Data Access Layer interface for the Document entity.
@@ -13,4 +14,5 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface DocumentRepository extends JpaRepository<Document, Long> {
     // Custom database queries (e.g., findByTitle) can be added here if needed.
+    List<Document> findByCategoryId(Long categoryId);
 }
