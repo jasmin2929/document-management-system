@@ -3,16 +3,20 @@ package com.dms.rest_api.repository;
 import com.dms.rest_api.entity.Document;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+
 import java.util.List;
 
 /**
- * Data Access Layer interface for the Document entity.
- * 
- * Extends JpaRepository to inherit full CRUD (Create, Read, Update, Delete) operations,
- * pagination, and sorting out of the box without writing explicit SQL queries.
+ * Spring Data JPA Repository for Document entities.
  */
 @Repository
 public interface DocumentRepository extends JpaRepository<Document, Long> {
-    // Custom database queries (e.g., findByTitle) can be added here if needed.
+
+    /**
+     * Finds all documents associated with a specific category ID.
+     *
+     * @param categoryId ID of the target category
+     * @return List of matching documents
+     */
     List<Document> findByCategoryId(Long categoryId);
 }
