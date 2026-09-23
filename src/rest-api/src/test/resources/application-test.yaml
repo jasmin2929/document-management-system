@@ -1,18 +1,24 @@
 server:
-  port: 8081
+  port: 0 # random/anonymous port in test to avoid port collisions
 
 spring:
   application:
     name: rest-api-test
 
-  # H2 In-Memory Datenbank anstelle von PostgreSQL für Unit-/Smoke-Tests
+  # Multipart Uploads in Test
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+  # H2 In-Memory Database instead of PostgreSQL for Unit-/Smoke-Tests
   datasource:
     url: jdbc:h2:mem:dms_testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=PostgreSQL
     username: sa
     password: 
     driver-class-name: org.h2.Driver
 
-  # JPA / Hibernate auf H2-Dialekt anpassen
+  # adapt JPA / Hibernate to H2-Dialect for testing purposes
   jpa:
     hibernate:
       ddl-auto: create-drop
@@ -22,7 +28,7 @@ spring:
         format_sql: true
     database-platform: org.hibernate.dialect.H2Dialect
 
-  # Autoconfiguration für RabbitMQ/ElasticSearch deaktivieren, falls diese lokal nicht laufen
+  # deactivate Autoconfiguration for RabbitMQ/ElasticSearch if these are not running locally
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration

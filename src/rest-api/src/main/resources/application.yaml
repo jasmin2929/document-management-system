@@ -1,9 +1,18 @@
 server:
-  port: 8081
+  port: ${PORT:8081}
+  error:
+    include-message: always
+    include-binding-errors: always
 
 spring:
   application:
     name: rest-api
+
+  # File Upload limits (Multipart)
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
 
   # PostgreSQL connection
   datasource:
@@ -11,6 +20,11 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME:jasmin}
     password: ${SPRING_DATASOURCE_PASSWORD:swen3_dms_2901}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      idle-timeout: 30000
+      connection-timeout: 20000
 
   # JPA / Hibernate settings
   jpa:
@@ -21,3 +35,8 @@ spring:
       hibernate:
         format_sql: true
     database-platform: org.hibernate.dialect.PostgreSQLDialect
+
+  # Custom Application Configuration (DMS)
+  dms:
+    upload:
+      dir: ${DMS_UPLOAD_DIR:./uploads}
