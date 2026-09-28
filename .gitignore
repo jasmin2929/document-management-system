@@ -3,13 +3,16 @@
 # ==========================================
 .DS_Store
 Thumbs.db
-*.swp
+*.sw?
 .idea/
 .vscode/
 *.suo
 *.user
 *.userosscache
+*.sln
 *.sln.docstates
+*.ntvs*
+*.njsproj
 
 # ==========================================
 # Java / Spring Boot Build Artifacts
@@ -39,6 +42,7 @@ minio-data/
 # ==========================================
 .env
 .env.local
+*.local
 *.pem
 *.key
 *.pfx
@@ -49,3 +53,15 @@ minio-data/
 *.log
 logs/
 tmp/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ==========================================
+# Web UI Build Artifacts
+# ==========================================
+src/web-ui/node_modules
+src/web-ui/dist
+src/web-ui/dist-ssr
