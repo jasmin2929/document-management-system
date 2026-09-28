@@ -14,12 +14,11 @@ async function handleResponse(response) {
   }
 
   const contentType = response.headers.get('content-type') || '';
-  const body = contentType.includes('application/json')
-    ? await response.json().catch(() => null)
-    : null;
+  const body = contentType.includes('application/json') ? await response.json().catch(() => null) : null;
 
   if (!response.ok) {
-    const message = body?.message || body?.error || `Request failed with status ${response.status}`;
+    const fieldErrors = body?.errors ? Object.values(body.errors).join(' ') : null;
+    const message = fieldErrors || body?.message || body?.error || `Request failed with status ${response.status}`;
     throw new ApiError(message, response.status);
   }
 
