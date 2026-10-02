@@ -1,76 +1,101 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getAllCategories } from '../api/categories';
 import { getAllDocuments } from '../api/documents';
-import CategoryManager from '../components/CategoryManager';
+import CategoryBar from '../components/CategoryBar';
 import DocumentList from '../components/DocumentList';
-import UploadForm from '../components/UploadForm';
+import UploadDialog from '../components/UploadDialog';
+import { FILTER_ALL, FILTER_NONE, matchesFilter } from '../utils/filters';
 
 export default function Dashboard() {
   const [categories, setCategories] = useState([]);
   const [documents, setDocuments] = useState([]);
-  const [selectedCategoryId, setSelectedCategoryId] = useState('');
+  const [filter, setFilter] = useState(FILTER_ALL);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   const loadCategories = useCallback(async () => {
-    const data = await getAllCategories();
-    setCategories(data);
+    setCategories(await getAllCategories());
   }, []);
 
-  const loadDocuments = useCallback(async (categoryId) => {
-    const data = await getAllDocuments(categoryId || undefined);
-    setDocuments(data);
+  const loadDocuments = useCallback(async () => {
+    setDocuments(await getAllDocuments());
   }, []);
 
-  const refreshAll = useCallback(async () => {
-    setLoading(true);
+  const reload = useCallback(async (loader) => {
     setLoadError(null);
     try {
-      await Promise.all([loadCategories(), loadDocuments(selectedCategoryId)]);
+      await loader();
     } catch (error) {
       setLoadError(error.message);
-    } finally {
-      setLoading(false);
     }
-  }, [loadCategories, loadDocuments, selectedCategoryId]);
+  }, []);
 
   useEffect(() => {
-    refreshAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCategoryId]);
+    Promise.all([getAllCategories(), getAllDocuments()])
+      .then(([cats, docs]) => {
+        setCategories(cats);
+        setDocuments(docs);
+      })
+      .catch((error) => setLoadError(error.message))
+      .finally(() => setLoading(false));
+  }, []);
 
-  async function handleCategoryCreated() {
-    try {
-      await loadCategories();
-    } catch (error) {
-      setLoadError(error.message);
-    }
+  const closeUpload = useCallback(() => setUploadOpen(false), []);
+
+  function handleUploaded() {
+    setUploadOpen(false);
+    reload(loadDocuments);
   }
 
-  async function handleDocumentUploaded() {
-    try {
-      await loadDocuments(selectedCategoryId);
-    } catch (error) {
-      setLoadError(error.message);
-    }
-  }
+  const visibleDocuments = documents.filter((document) => matchesFilter(document, filter));
+  const defaultUploadCategory = filter !== FILTER_ALL && filter !== FILTER_NONE ? filter : '';
 
   return (
-    <section>
-      <h1>Dashboard</h1>
+    <main className="page">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Dashboard</h1>
+          <div className="page-subtitle">
+            {documents.length} {documents.length === 1 ? 'document' : 'documents'}
+          </div>
+        </div>
+        <button type="button" className="btn btn--primary" onClick={() => setUploadOpen(true)}>
+          Upload document
+        </button>
+      </div>
 
-      <CategoryManager
+      <CategoryBar
         categories={categories}
-        selectedCategoryId={selectedCategoryId}
-        onSelectCategory={setSelectedCategoryId}
-        onCategoryCreated={handleCategoryCreated}
+        documents={documents}
+        filter={filter}
+        onFilterChange={setFilter}
+        onCategoryCreated={() => reload(loadCategories)}
       />
 
-      <UploadForm categories={categories} onUploaded={handleDocumentUploaded} />
+      {loadError && (
+        <div className="alert" role="alert">
+          {loadError}
+        </div>
+      )}
 
-      <h2>Documents</h2>
-      {loadError && <div role="alert">{loadError}</div>}
-      {loading ? <p>Loading…</p> : <DocumentList documents={documents} />}
-    </section>
+      {loading ? (
+        <p className="muted">Loading…</p>
+      ) : (
+        <DocumentList
+          documents={visibleDocuments}
+          emptyMessage={filter === FILTER_ALL ? 'No documents yet.' : 'No documents in this category.'}
+        />
+      )}
+
+      {uploadOpen && (
+        <UploadDialog
+          categories={categories}
+          defaultCategoryId={defaultUploadCategory}
+          onClose={closeUpload}
+          onUploaded={handleUploaded}
+        />
+      )}
+    </main>
   );
 }

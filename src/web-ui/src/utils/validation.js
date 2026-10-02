@@ -21,6 +21,13 @@ export function validateUploadForm({ file, title }) {
   return errors;
 }
 
+export function validateTitle(title) {
+  const trimmed = (title || '').trim();
+  if (!trimmed) return 'Title is required.';
+  if (trimmed.length > MAX_TITLE_LENGTH) return `Title must be at most ${MAX_TITLE_LENGTH} characters.`;
+  return null;
+}
+
 export function validateCategoryName(name) {
   const errors = {};
   const trimmed = (name || '').trim();

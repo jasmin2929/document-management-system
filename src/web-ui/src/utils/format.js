@@ -11,9 +11,21 @@ export function formatFileSize(bytes) {
   return `${value.toFixed(1)} ${units[unitIndex]}`;
 }
 
-export function formatDate(isoString) {
+// Mon MM, YYYY, HH:MM AM/PM withSeconds adds ":SS"
+export function formatDate(isoString, { withSeconds = false } = {}) {
   if (!isoString) return '—';
   const date = new Date(isoString);
   if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleString();
+  const day = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const time = date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    ...(withSeconds && { second: '2-digit' }),
+  });
+  return `${day}, ${time}`;
+}
+
+export function formatStatus(status) {
+  if (!status) return 'Unknown';
+  return status.charAt(0) + status.slice(1).toLowerCase();
 }

@@ -35,6 +35,9 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-db:5432/${POSTGRES_DB:-dms_db}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-jasmin}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-swen3_dms_2901}
+      DMS_UPLOAD_DIR: /app/uploads
+    volumes:
+      - uploads-data:/app/uploads
     depends_on:
       postgres-db:
         condition: service_healthy
@@ -55,3 +58,4 @@ services:
 
 volumes:
   postgres-data:
+  uploads-data:

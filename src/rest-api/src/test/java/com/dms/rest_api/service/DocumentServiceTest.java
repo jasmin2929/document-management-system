@@ -210,6 +210,37 @@ class DocumentServiceTest {
         }
 
         @Test
+        @DisplayName("updateDocument() with clearCategory removes the category")
+        void updateDocument_ClearCategory_RemovesCategory() {
+            DocumentUpdateDto updateDto = new DocumentUpdateDto();
+            updateDto.setClearCategory(true);
+
+            given(documentRepository.findById(1L)).willReturn(Optional.of(sampleDocument));
+            given(documentRepository.save(sampleDocument)).willReturn(sampleDocument);
+            given(documentMapper.toDto(sampleDocument)).willReturn(sampleResponseDto);
+
+            documentService.updateDocument(1L, updateDto);
+
+            assertThat(sampleDocument.getCategory()).isNull();
+            verify(categoryService, never()).findEntityById(anyLong());
+        }
+
+        @Test
+        @DisplayName("updateDocument() without categoryId keeps the existing category")
+        void updateDocument_NoCategoryId_KeepsCategory() {
+            DocumentUpdateDto updateDto = new DocumentUpdateDto();
+            updateDto.setTitle("Renamed");
+
+            given(documentRepository.findById(1L)).willReturn(Optional.of(sampleDocument));
+            given(documentRepository.save(sampleDocument)).willReturn(sampleDocument);
+            given(documentMapper.toDto(sampleDocument)).willReturn(sampleResponseDto);
+
+            documentService.updateDocument(1L, updateDto);
+
+            assertThat(sampleDocument.getCategory()).isEqualTo(sampleCategory);
+        }
+
+        @Test
         @DisplayName("deleteDocument() removes physical file and deletes database record")
         void deleteDocument_Success_DeletesFileAndDbRecord() {
             given(documentRepository.findById(1L)).willReturn(Optional.of(sampleDocument));

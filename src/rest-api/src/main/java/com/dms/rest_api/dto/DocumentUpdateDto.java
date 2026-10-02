@@ -15,4 +15,5 @@ public class DocumentUpdateDto {
     private String summary;
     private DocumentStatus status;
     private Long categoryId;
+    private Boolean clearCategory;
 }
