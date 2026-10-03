@@ -97,7 +97,9 @@ public class DocumentService {
 
         documentMapper.updateEntityFromDto(dto, existing);
 
-        if (dto.getCategoryId() != null) {
+        if (Boolean.TRUE.equals(dto.getClearCategory())) {
+            existing.setCategory(null);
+        } else if (dto.getCategoryId() != null) {
             existing.setCategory(categoryService.findEntityById(dto.getCategoryId()));
         }
 
