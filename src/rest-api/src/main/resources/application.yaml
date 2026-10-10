@@ -26,6 +26,13 @@ spring:
       idle-timeout: 30000
       connection-timeout: 20000
 
+  # RabbitMQ connection
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:rabbitmq}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:dms_user}
+    password: ${SPRING_RABBITMQ_PASSWORD:dms_password_change_me}
+
   # JPA / Hibernate settings
   jpa:
     hibernate:

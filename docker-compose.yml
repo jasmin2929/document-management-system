@@ -21,6 +21,28 @@ services:
       retries: 5
 
   # ==========================================
+  # RabbitMQ Message Broker (+ Management UI)
+  # ==========================================
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: dms-rabbitmq
+    hostname: dms-rabbitmq
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-dms_user}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-dms_password_change_me}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
   # Spring Boot REST API Service
   # ==========================================
   rest-api:
@@ -36,10 +58,16 @@ services:
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-jasmin}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-swen3_dms_2901}
       DMS_UPLOAD_DIR: /app/uploads
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-dms_user}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-dms_password_change_me}
     volumes:
       - uploads-data:/app/uploads
     depends_on:
       postgres-db:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
 
   # ==========================================
@@ -59,3 +87,4 @@ services:
 volumes:
   postgres-data:
   uploads-data:
+  rabbitmq-data:
