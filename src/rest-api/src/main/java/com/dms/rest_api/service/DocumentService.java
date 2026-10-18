@@ -5,9 +5,11 @@ import com.dms.rest_api.dto.DocumentUpdateDto;
 import com.dms.rest_api.entity.Category;
 import com.dms.rest_api.entity.Document;
 import com.dms.rest_api.exception.ResourceNotFoundException;
+import com.dms.rest_api.logging.LogSanitizer;
 import com.dms.rest_api.mapper.DocumentMapper;
 import com.dms.rest_api.repository.CategoryRepository;
 import com.dms.rest_api.repository.DocumentRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +23,7 @@ import java.util.stream.Collectors;
 /**
  * Orchestrates document lifecycle, business domain rules, and metadata persistence.
  */
+@Slf4j
 @Service
 @Transactional
 public class DocumentService {
@@ -45,6 +48,7 @@ public class DocumentService {
         List<Document> docs = (categoryId != null)
                 ? documentRepository.findByCategoryId(categoryId)
                 : documentRepository.findAll();
+        log.debug("Found {} documents (categoryId={})", docs.size(), categoryId);
 
         return docs.stream()
                 .map(documentMapper::toDto)
@@ -60,6 +64,9 @@ public class DocumentService {
 
     public DocumentResponseDto storeFile(MultipartFile file, String title, Long categoryId) {
         String rawFilename = fileStorageService.sanitizeFilename(file.getOriginalFilename());
+        log.info("Upload received: file='{}', size={} bytes, type={}, categoryId={}",
+                LogSanitizer.sanitize(rawFilename), file.getSize(),
+                LogSanitizer.sanitize(file.getContentType()), categoryId);
         Path targetLocation = fileStorageService.store(file);
 
         try {
@@ -75,9 +82,13 @@ public class DocumentService {
                     .category(category)
                     .build();
 
-            return documentMapper.toDto(documentRepository.save(document));
+            Document saved = documentRepository.save(document);
+            log.info("Document {} created for file '{}'", saved.getId(), LogSanitizer.sanitize(rawFilename));
+            return documentMapper.toDto(saved);
         } catch (Exception ex) {
             // Rollback physical file if DB insertion or mapping fails
+            log.error("Saving metadata for '{}' failed, removing stored file again",
+                    LogSanitizer.sanitize(rawFilename), ex);
             fileStorageService.deleteQuietly(targetLocation);
             throw ex;
         }
@@ -103,7 +114,9 @@ public class DocumentService {
             existing.setCategory(categoryService.findEntityById(dto.getCategoryId()));
         }
 
-        return documentMapper.toDto(documentRepository.save(existing));
+        Document saved = documentRepository.save(existing);
+        log.info("Document {} updated", id);
+        return documentMapper.toDto(saved);
     }
 
     public void deleteDocument(Long id) {
@@ -115,6 +128,7 @@ public class DocumentService {
         }
 
         documentRepository.delete(doc);
+        log.info("Document {} deleted", id);
     }
 
 }

@@ -6,7 +6,9 @@ import com.dms.rest_api.dto.DocumentResponseDto;
 import com.dms.rest_api.entity.Category;
 import com.dms.rest_api.exception.ResourceNotFoundException;
 import com.dms.rest_api.mapper.CategoryMapper;
+import com.dms.rest_api.logging.LogSanitizer;
 import com.dms.rest_api.repository.CategoryRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +18,7 @@ import java.util.stream.Collectors;
 /**
  * Service handling business logic for category administration.
  */
+@Slf4j
 @Service
 @Transactional
 public class CategoryService {
@@ -68,8 +71,9 @@ public class CategoryService {
      * Creates a new category.
      */
     public CategoryResponseDto create(CategoryRequestDto dto) {
-        Category category = categoryMapper.toEntity(dto);
-        return categoryMapper.toDto(categoryRepository.save(category));
+        Category category = categoryRepository.save(categoryMapper.toEntity(dto));
+        log.info("Category {} created: '{}'", category.getId(), LogSanitizer.sanitize(category.getName()));
+        return categoryMapper.toDto(category);
     }
 
     /**
@@ -78,7 +82,9 @@ public class CategoryService {
     public CategoryResponseDto update(Long id, CategoryRequestDto dto) {
         Category category = findEntityById(id);
         categoryMapper.updateEntityFromDto(dto, category);
-        return categoryMapper.toDto(categoryRepository.save(category));
+        Category saved = categoryRepository.save(category);
+        log.info("Category {} renamed to '{}'", id, LogSanitizer.sanitize(saved.getName()));
+        return categoryMapper.toDto(saved);
     }
 
     /**
@@ -89,5 +95,7 @@ public class CategoryService {
             throw new ResourceNotFoundException("Category not found with ID: " + id);
         }
         categoryRepository.deleteById(id);
+        // Category.documents uses CascadeType.ALL, so its documents are deleted as well
+        log.warn("Category {} deleted together with all of its documents", id);
     }
 }
