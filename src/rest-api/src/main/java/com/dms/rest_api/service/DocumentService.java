@@ -7,6 +7,7 @@ import com.dms.rest_api.entity.Category;
 import com.dms.rest_api.entity.Document;
 import com.dms.rest_api.exception.MessagingException;
 import com.dms.rest_api.exception.ResourceNotFoundException;
+import com.dms.rest_api.logging.LogSanitizer;
 import com.dms.rest_api.mapper.DocumentMapper;
 import com.dms.rest_api.repository.CategoryRepository;
 import com.dms.rest_api.repository.DocumentRepository;
@@ -55,6 +56,7 @@ public class DocumentService {
         List<Document> docs = (categoryId != null)
                 ? documentRepository.findByCategoryId(categoryId)
                 : documentRepository.findAll();
+        log.debug("Found {} documents (categoryId={})", docs.size(), categoryId);
 
         return docs.stream()
                 .map(documentMapper::toDto)
@@ -70,6 +72,9 @@ public class DocumentService {
 
     public DocumentResponseDto storeFile(MultipartFile file, String title, Long categoryId) {
         String rawFilename = fileStorageService.sanitizeFilename(file.getOriginalFilename());
+        log.info("Upload received: file='{}', size={} bytes, type={}, categoryId={}",
+                LogSanitizer.sanitize(rawFilename), file.getSize(),
+                LogSanitizer.sanitize(file.getContentType()), categoryId);
         Path targetLocation = fileStorageService.store(file);
 
         try {
@@ -98,7 +103,9 @@ public class DocumentService {
 
             return documentMapper.toDto(savedDocument);
         } catch (Exception ex) {
-            // Rollback physical file if DB insertion, mapping or queuing fails
+            // Rollback physical file if DB insertion or mapping fails
+            log.error("Saving metadata for '{}' failed, removing stored file again",
+                    LogSanitizer.sanitize(rawFilename), ex);
             fileStorageService.deleteQuietly(targetLocation);
             throw ex;
         }
@@ -124,7 +131,9 @@ public class DocumentService {
             existing.setCategory(categoryService.findEntityById(dto.getCategoryId()));
         }
 
-        return documentMapper.toDto(documentRepository.save(existing));
+        Document saved = documentRepository.save(existing);
+        log.info("Document {} updated", id);
+        return documentMapper.toDto(saved);
     }
 
     public void deleteDocument(Long id) {
@@ -136,6 +145,7 @@ public class DocumentService {
         }
 
         documentRepository.delete(doc);
+        log.info("Document {} deleted", id);
     }
 
 }
