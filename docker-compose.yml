@@ -41,6 +41,26 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      
+  # ==========================================
+  # OCR Worker Service (Python)
+  # ==========================================
+  ocr-worker:
+    build:
+      context: ./src/ocr-worker
+      dockerfile: Dockerfile
+    container_name: dms-ocr-worker
+    restart: always
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_DEFAULT_USER:-dms_user}
+      RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-dms_password_change_me}
+      OCR_QUEUE: ocr-queue
+      LOG_LEVEL: INFO
 
   # ==========================================
   # Spring Boot REST API Service
@@ -55,8 +75,8 @@ services:
       - "${REST_API_PORT:-8081}:8081"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-db:5432/${POSTGRES_DB:-dms_db}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-jasmin}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-swen3_dms_2901}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-dms_user}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-dms_password_change_me}
       DMS_UPLOAD_DIR: /app/uploads
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
@@ -83,7 +103,7 @@ services:
       - "${WEB_UI_PORT:-80}:80"
     depends_on:
       - rest-api
-
+      
 volumes:
   postgres-data:
   uploads-data:

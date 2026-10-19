@@ -1,15 +1,20 @@
 package com.dms.rest_api.service;
 
+import com.dms.rest_api.config.RabbitConfig;
 import com.dms.rest_api.dto.DocumentResponseDto;
 import com.dms.rest_api.dto.DocumentUpdateDto;
 import com.dms.rest_api.entity.Category;
 import com.dms.rest_api.entity.Document;
+import com.dms.rest_api.exception.MessagingException;
 import com.dms.rest_api.exception.ResourceNotFoundException;
 import com.dms.rest_api.logging.LogSanitizer;
 import com.dms.rest_api.mapper.DocumentMapper;
 import com.dms.rest_api.repository.CategoryRepository;
 import com.dms.rest_api.repository.DocumentRepository;
+
 import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,15 +37,18 @@ public class DocumentService {
     private final CategoryService categoryService;    
     private final DocumentMapper documentMapper;
     private final FileStorageService fileStorageService;
+    private final RabbitTemplate rabbitTemplate;
 
     public DocumentService(DocumentRepository documentRepository,
                            CategoryService categoryService,
                            DocumentMapper documentMapper,
-                           FileStorageService fileStorageService) {
+                           FileStorageService fileStorageService,
+                            RabbitTemplate rabbitTemplate) {
         this.documentRepository = documentRepository;
         this.categoryService = categoryService;
         this.documentMapper = documentMapper;
         this.fileStorageService = fileStorageService;
+        this.rabbitTemplate = rabbitTemplate;
     }
 
     @Transactional(readOnly = true)
@@ -78,13 +86,22 @@ public class DocumentService {
                     .fileType(file.getContentType())
                     .fileSize(file.getSize())
                     .storagePath(targetLocation.toString())
-                    .status(Document.DocumentStatus.PROCESSED) // can be set async when OCR is implemented
+                    .status(Document.DocumentStatus.PENDING)
                     .category(category)
                     .build();
 
-            Document saved = documentRepository.save(document);
-            log.info("Document {} created for file '{}'", saved.getId(), LogSanitizer.sanitize(rawFilename));
-            return documentMapper.toDto(saved);
+            Document savedDocument = documentRepository.save(document);
+
+            // Send message to RabbitMQ for OCR processing
+            try {
+                rabbitTemplate.convertAndSend(RabbitConfig.OCR_QUEUE, savedDocument.getId());
+                log.info("Successfully sent OCR message for document ID: {} to queue: {}", savedDocument.getId(), RabbitConfig.OCR_QUEUE);
+            } catch (Exception ex) {
+                log.error("Failed to send message to RabbitMQ for document ID: {}", savedDocument.getId(), ex);
+                throw new MessagingException("Messaging layer error: Could not dispatch OCR task", ex);
+            }
+
+            return documentMapper.toDto(savedDocument);
         } catch (Exception ex) {
             // Rollback physical file if DB insertion or mapping fails
             log.error("Saving metadata for '{}' failed, removing stored file again",

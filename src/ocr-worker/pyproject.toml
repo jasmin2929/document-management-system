@@ -1,0 +1,16 @@
+[project]
+name = "ocr-worker"
+version = "0.1.0"
+description = "Document Management System - OCR worker service"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
+
+[tool.coverage.run]
+source = ["ocr_worker"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 70
