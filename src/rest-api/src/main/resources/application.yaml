@@ -26,11 +26,19 @@ spring:
       idle-timeout: 30000
       connection-timeout: 20000
 
+  # RabbitMQ connection
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:rabbitmq}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:dms_user}
+    password: ${SPRING_RABBITMQ_PASSWORD:dms_password_change_me}
+
   # JPA / Hibernate settings
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    # SQL logging is controlled via logging.level.org.hibernate.SQL below instead of printing to stdout
+    show-sql: false
     properties:
       hibernate:
         format_sql: true
@@ -42,3 +50,14 @@ dms:
     dir: ${DMS_UPLOAD_DIR:./uploads}
   cors:
     allowed-origins: ${DMS_CORS_ALLOWED_ORIGINS:http://localhost,http://localhost:80,http://localhost:5173}
+
+# Logging (SLF4J + Logback, Spring Boot default)
+logging:
+  level:
+    root: INFO
+    com.dms.rest_api: ${DMS_LOG_LEVEL:INFO}
+    # set to DEBUG to see every SQL statement Hibernate executes
+    org.hibernate.SQL: ${DMS_SQL_LOG_LEVEL:WARN}
+  pattern:
+    # adds the request ID from RequestLoggingFilter to every log line, e.g. "INFO [3f2a9c1b]"
+    level: "%5p [%X{requestId:-}]"

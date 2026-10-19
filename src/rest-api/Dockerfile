@@ -1,21 +1,20 @@
-# 1. Build-Phase: JDK 25 auf Debian/Ubuntu Basis
-FROM maven:3.9-eclipse-temurin-25 AS builder
+# ---------- Build stage: JDK 25 + Maven ----------
+FROM maven:3.9-eclipse-temurin-25-alpine AS builder
 WORKDIR /app
 
-# Copy and download dependencies
 COPY pom.xml .
-RUN mvn dependency:go-offline
-
-# Copy source code and build JAR
 COPY src ./src
-RUN mvn clean package -DskipTests
+# -e prints the stack trace on failure; the ls makes the step fail
+# right here (with a readable message) if no jar was produced
+RUN mvn -B -e clean package -DskipTests \
+ && ls -la target/*.jar
 
-# 2. Runtime-Phase: JRE 25 auf Debian/Ubuntu Basis
-FROM eclipse-temurin:25-jre
+# ---------- Runtime stage: JRE 25 ----------
+FROM eclipse-temurin:25-jre-alpine
 WORKDIR /app
 
 # Copy the built JAR from the build phase
-COPY --from=builder /app/target/*.jar app.jar
+COPY --from=builder /app/target/rest-api-0.0.1-SNAPSHOT.jar ./app.jar
 
 # Expose the port of the REST server
 EXPOSE 8081
