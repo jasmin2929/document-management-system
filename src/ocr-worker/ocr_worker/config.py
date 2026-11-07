@@ -6,6 +6,7 @@ instead of crashing later with an obscure error.
 """
 
 import os
+import re
 from dataclasses import dataclass
 from typing import Mapping, Optional
 
@@ -28,6 +29,10 @@ class Settings:
         log_level: Python log level name, e.g. ``"INFO"``.
         connect_retries: How often to try connecting before giving up.
         connect_retry_delay: Seconds to wait between two connection attempts.
+        ocr_language: Tesseract language(s), e.g. ``"deu+eng"`` for German and English.
+        ocr_dpi: Resolution Ghostscript renders the PDF pages with; 300 is the usual value for OCR.
+        ocr_max_pages: Only the first pages are processed, so a huge PDF cannot block the worker.
+        ocr_timeout_seconds: Maximum runtime of one Ghostscript or Tesseract call.
     """
 
     rabbitmq_host: str
@@ -38,6 +43,11 @@ class Settings:
     log_level: str
     connect_retries: int
     connect_retry_delay: float
+    # Defaults keep existing callers (e.g. tests) working that only pass the RabbitMQ settings.
+    ocr_language: str = "deu+eng"
+    ocr_dpi: int = 300
+    ocr_max_pages: int = 50
+    ocr_timeout_seconds: float = 120.0
 
 
 def _get_int(env: Mapping[str, str], name: str, default: int, minimum: int) -> int:
@@ -144,4 +154,27 @@ def load_settings(env: Optional[Mapping[str, str]] = None) -> Settings:
         log_level=log_level,
         connect_retries=_get_int(env, "RABBITMQ_CONNECT_RETRIES", 10, minimum=1),
         connect_retry_delay=_get_float(env, "RABBITMQ_CONNECT_RETRY_DELAY", 3.0),
+        ocr_language=_get_ocr_language(env),
+        ocr_dpi=_get_int(env, "OCR_DPI", 300, minimum=72),
+        ocr_max_pages=_get_int(env, "OCR_MAX_PAGES", 50, minimum=1),
+        ocr_timeout_seconds=_get_float(env, "OCR_TIMEOUT_SECONDS", 120.0),
     )
+
+
+def _get_ocr_language(env: Mapping[str, str]) -> str:
+    """Read the Tesseract language setting, e.g. ``"deu+eng"``.
+
+    Args:
+        env: Source of the environment variables.
+
+    Returns:
+        The language codes joined by ``+``.
+
+    Raises:
+        ConfigurationException: If the value is not a list of language codes.
+    """
+    value = env.get("OCR_LANGUAGE", "deu+eng").strip()
+    # The value is passed to the tesseract command, so only allow plain language codes.
+    if not re.fullmatch(r"[a-z_]{3,10}(\+[a-z_]{3,10})*", value):
+        raise ConfigurationException(f"OCR_LANGUAGE must look like 'deu+eng', got '{value}'")
+    return value

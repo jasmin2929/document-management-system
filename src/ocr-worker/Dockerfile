@@ -5,6 +5,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /app
+# OCR tools: Ghostscript renders PDF pages to images, Tesseract recognizes the text on them.
+# Language packs: English is included in tesseract-ocr, German is added for German documents.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ghostscript tesseract-ocr tesseract-ocr-deu \
+ && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 COPY ocr_worker ./ocr_worker

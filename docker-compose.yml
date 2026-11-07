@@ -85,6 +85,10 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-dms_password_change_me}
       OCR_QUEUE: ocr-queue
       LOG_LEVEL: INFO
+      # Tesseract languages (German + English) and limits for one document
+      OCR_LANGUAGE: ${OCR_LANGUAGE:-deu+eng}
+      OCR_DPI: 300
+      OCR_MAX_PAGES: 50
 
   # ==========================================
   # Spring Boot REST API Service

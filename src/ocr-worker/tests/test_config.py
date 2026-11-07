@@ -55,6 +55,30 @@ class LoadSettingsTest(unittest.TestCase):
         with self.assertRaisesRegex(ConfigurationException, "LOG_LEVEL"):
             load_settings(dict(BASE_ENV, LOG_LEVEL="LOUD"))
 
+    def test_ocr_defaults(self):
+        settings = load_settings(BASE_ENV)
+        self.assertEqual("deu+eng", settings.ocr_language)
+        self.assertEqual(300, settings.ocr_dpi)
+        self.assertEqual(50, settings.ocr_max_pages)
+        self.assertEqual(120.0, settings.ocr_timeout_seconds)
+
+    def test_ocr_values_from_environment_override_defaults(self):
+        env = dict(BASE_ENV, OCR_LANGUAGE="eng", OCR_DPI="150", OCR_MAX_PAGES="3", OCR_TIMEOUT_SECONDS="30")
+        settings = load_settings(env)
+        self.assertEqual("eng", settings.ocr_language)
+        self.assertEqual(150, settings.ocr_dpi)
+        self.assertEqual(3, settings.ocr_max_pages)
+        self.assertEqual(30.0, settings.ocr_timeout_seconds)
+
+    def test_ocr_language_with_command_characters_raises(self):
+        # The value ends up in the tesseract command, so anything but language codes is refused
+        with self.assertRaisesRegex(ConfigurationException, "OCR_LANGUAGE"):
+            load_settings(dict(BASE_ENV, OCR_LANGUAGE="eng --tessdata-dir /etc"))
+
+    def test_ocr_dpi_below_minimum_raises(self):
+        with self.assertRaisesRegex(ConfigurationException, "OCR_DPI must be >= 72"):
+            load_settings(dict(BASE_ENV, OCR_DPI="10"))
+
 
 if __name__ == "__main__":
     unittest.main()

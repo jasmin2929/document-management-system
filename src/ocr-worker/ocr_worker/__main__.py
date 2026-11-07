@@ -7,6 +7,7 @@ shutdown and translates failures into process exit codes:
 * ``0`` - worker stopped normally (e.g. after SIGTERM / CTRL+C)
 * ``1`` - RabbitMQ could not be reached or the connection was lost
 * ``2`` - invalid configuration (missing or malformed environment variables)
+* ``3`` - Ghostscript or Tesseract is not installed or not working
 
 A non-zero exit code lets Docker's restart policy bring the worker back up.
 """
@@ -16,9 +17,10 @@ import signal
 import sys
 
 from ocr_worker.config import load_settings
-from ocr_worker.exceptions import BrokerConnectionException, ConfigurationException
+from ocr_worker.exceptions import BrokerConnectionException, ConfigurationException, OcrProcessingException
 from ocr_worker.logging_config import configure_logging
 from ocr_worker.messaging.consumer import OcrQueueConsumer
+from ocr_worker.processing.ocr_engine import OcrEngine
 from ocr_worker.processing.ocr_processor import OcrProcessor
 
 log = logging.getLogger("ocr_worker")
@@ -43,9 +45,22 @@ def main() -> int:
     # Re-apply logging with the configured log level.
     configure_logging(settings.log_level)
 
+    engine = OcrEngine(
+        language=settings.ocr_language,
+        dpi=settings.ocr_dpi,
+        max_pages=settings.ocr_max_pages,
+        timeout_seconds=settings.ocr_timeout_seconds,
+    )
+    try:
+        log.info("OCR tools ready: %s", engine.check_tools())
+    except OcrProcessingException as ex:
+        # Without the OCR tools the worker cannot do its job: fail fast.
+        log.critical("OCR tools not available: %s", ex)
+        return 3
+
     # Dependencies are created here and injected via the constructor,
     # which keeps the consumer independent and easy to unit-test.
-    consumer = OcrQueueConsumer(settings, OcrProcessor())
+    consumer = OcrQueueConsumer(settings, OcrProcessor(engine))
 
     def handle_shutdown(signum, _frame):
         """Stop consuming when the process receives a termination signal."""
