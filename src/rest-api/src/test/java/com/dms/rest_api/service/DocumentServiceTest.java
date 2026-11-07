@@ -2,8 +2,10 @@ package com.dms.rest_api.service;
 
 import com.dms.rest_api.dto.DocumentResponseDto;
 import com.dms.rest_api.dto.DocumentUpdateDto;
+import com.dms.rest_api.dto.OcrMessageDto;
 import com.dms.rest_api.entity.Category;
 import com.dms.rest_api.entity.Document;
+import com.dms.rest_api.exception.MessagingException;
 import com.dms.rest_api.exception.ResourceNotFoundException;
 import com.dms.rest_api.mapper.DocumentMapper;
 import com.dms.rest_api.repository.DocumentRepository;
@@ -15,11 +17,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.amqp.AmqpException;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.core.io.Resource;
 import org.springframework.mock.web.MockMultipartFile;
 
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.Optional;
 
@@ -28,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.*;
 
@@ -44,7 +47,10 @@ class DocumentServiceTest {
     private DocumentMapper documentMapper;
 
     @Mock
-    private FileStorageService fileStorageService;
+    private ObjectStorageService objectStorageService;
+
+    @Mock
+    private RabbitTemplate rabbitTemplate;
 
     @InjectMocks
     private DocumentService documentService;
@@ -63,7 +69,7 @@ class DocumentServiceTest {
                 .originalFileName("Invoice_2026.pdf")
                 .fileType("application/pdf")
                 .fileSize(1024L)
-                .storagePath("/app/uploads/uuid_Invoice_2026.pdf")
+                .storagePath("documents/uuid.pdf")
                 .status(Document.DocumentStatus.PROCESSED)
                 .category(sampleCategory)
                 .build();
@@ -140,10 +146,10 @@ class DocumentServiceTest {
         @DisplayName("storeFile() successfully stores file and creates metadata entity")
         void storeFile_Success_ReturnsResponseDto() {
             MockMultipartFile mockFile = new MockMultipartFile("file", "test.pdf", "application/pdf", "dummy data".getBytes());
-            Path targetPath = Paths.get("/app/uploads/uuid_test.pdf");
+            String objectKey = "documents/uuid.pdf";
 
-            given(fileStorageService.sanitizeFilename("test.pdf")).willReturn("test.pdf");
-            given(fileStorageService.store(mockFile)).willReturn(targetPath);
+            given(objectStorageService.sanitizeFilename("test.pdf")).willReturn("test.pdf");
+            given(objectStorageService.store(mockFile)).willReturn(objectKey);
             given(categoryService.findEntityById(10L)).willReturn(sampleCategory);
             given(documentRepository.save(any(Document.class))).willReturn(sampleDocument);
             given(documentMapper.toDto(sampleDocument)).willReturn(sampleResponseDto);
@@ -151,19 +157,54 @@ class DocumentServiceTest {
             DocumentResponseDto result = documentService.storeFile(mockFile, "My Title", 10L);
 
             assertThat(result).isNotNull();
-            verify(fileStorageService, times(1)).store(mockFile);
+            verify(objectStorageService, times(1)).store(mockFile);
             verify(documentRepository, times(1)).save(any(Document.class));
-            verify(fileStorageService, never()).deleteQuietly(any());
+            verify(objectStorageService, never()).deleteQuietly(any());
         }
 
         @Test
-        @DisplayName("storeFile() cleans up physical file on rollback when DB persistence fails")
+        @DisplayName("storeFile() saves the object key as storage path and sends it to the OCR queue")
+        void storeFile_Success_SendsObjectKeyToOcrQueue() {
+            MockMultipartFile mockFile = new MockMultipartFile("file", "test.pdf", "application/pdf", "dummy data".getBytes());
+            String objectKey = "documents/uuid.pdf";
+
+            given(objectStorageService.sanitizeFilename("test.pdf")).willReturn("test.pdf");
+            given(objectStorageService.store(mockFile)).willReturn(objectKey);
+            given(objectStorageService.getBucket()).willReturn("dms-documents");
+            given(documentRepository.save(any(Document.class))).willReturn(sampleDocument);
+
+            documentService.storeFile(mockFile, null, null);
+
+            verify(documentRepository).save(argThat(doc -> objectKey.equals(doc.getStoragePath())));
+            verify(rabbitTemplate).convertAndSend(eq("ocr-queue"),
+                    eq(new OcrMessageDto(sampleDocument.getId(), "dms-documents", objectKey)));
+        }
+
+        @Test
+        @DisplayName("storeFile() removes the stored object when the OCR message cannot be sent")
+        void storeFile_MessagingFailure_RollsBackStoredObject() {
+            MockMultipartFile mockFile = new MockMultipartFile("file", "test.pdf", "application/pdf", "dummy data".getBytes());
+            String objectKey = "documents/uuid.pdf";
+
+            given(objectStorageService.sanitizeFilename("test.pdf")).willReturn("test.pdf");
+            given(objectStorageService.store(mockFile)).willReturn(objectKey);
+            given(documentRepository.save(any(Document.class))).willReturn(sampleDocument);
+            doThrow(new AmqpException("broker down")).when(rabbitTemplate).convertAndSend(anyString(), any(Object.class));
+
+            assertThatThrownBy(() -> documentService.storeFile(mockFile, null, null))
+                    .isInstanceOf(MessagingException.class);
+
+            verify(objectStorageService, times(1)).deleteQuietly(objectKey);
+        }
+
+        @Test
+        @DisplayName("storeFile() removes the stored object again when DB persistence fails")
         void storeFile_DbFailure_RollsBackPhysicalFile() {
             MockMultipartFile mockFile = new MockMultipartFile("file", "test.pdf", "application/pdf", "dummy data".getBytes());
-            Path targetPath = Paths.get("/app/uploads/uuid_test.pdf");
+            String objectKey = "documents/uuid.pdf";
 
-            given(fileStorageService.sanitizeFilename("test.pdf")).willReturn("test.pdf");
-            given(fileStorageService.store(mockFile)).willReturn(targetPath);
+            given(objectStorageService.sanitizeFilename("test.pdf")).willReturn("test.pdf");
+            given(objectStorageService.store(mockFile)).willReturn(objectKey);
             given(categoryService.findEntityById(10L)).willReturn(sampleCategory);
             given(documentRepository.save(any(Document.class))).willThrow(new RuntimeException("Database error"));
 
@@ -171,7 +212,7 @@ class DocumentServiceTest {
                     .isInstanceOf(RuntimeException.class)
                     .hasMessage("Database error");
 
-            verify(fileStorageService, times(1)).deleteQuietly(targetPath);
+            verify(objectStorageService, times(1)).deleteQuietly(objectKey);
         }
     }
 
@@ -180,11 +221,11 @@ class DocumentServiceTest {
     class ResourceUpdateDeleteTests {
 
         @Test
-        @DisplayName("loadFileAsResource() delegates to FileStorageService")
+        @DisplayName("loadFileAsResource() delegates to ObjectStorageService")
         void loadFileAsResource_Success_ReturnsResource() {
             Resource mockResource = mock(Resource.class);
             given(documentRepository.findById(1L)).willReturn(Optional.of(sampleDocument));
-            given(fileStorageService.loadAsResource(sampleDocument.getStoragePath())).willReturn(mockResource);
+            given(objectStorageService.load(sampleDocument.getStoragePath())).willReturn(mockResource);
 
             Resource result = documentService.loadFileAsResource(1L);
 
@@ -241,13 +282,13 @@ class DocumentServiceTest {
         }
 
         @Test
-        @DisplayName("deleteDocument() removes physical file and deletes database record")
+        @DisplayName("deleteDocument() removes stored object and deletes database record")
         void deleteDocument_Success_DeletesFileAndDbRecord() {
             given(documentRepository.findById(1L)).willReturn(Optional.of(sampleDocument));
 
             documentService.deleteDocument(1L);
 
-            verify(fileStorageService, times(1)).deleteQuietly(Paths.get(sampleDocument.getStoragePath()));
+            verify(objectStorageService, times(1)).deleteQuietly(sampleDocument.getStoragePath());
             verify(documentRepository, times(1)).delete(sampleDocument);
         }
     }

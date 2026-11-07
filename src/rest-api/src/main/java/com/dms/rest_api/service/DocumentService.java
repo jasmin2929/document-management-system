@@ -3,6 +3,7 @@ package com.dms.rest_api.service;
 import com.dms.rest_api.config.RabbitConfig;
 import com.dms.rest_api.dto.DocumentResponseDto;
 import com.dms.rest_api.dto.DocumentUpdateDto;
+import com.dms.rest_api.dto.OcrMessageDto;
 import com.dms.rest_api.entity.Category;
 import com.dms.rest_api.entity.Document;
 import com.dms.rest_api.exception.MessagingException;
@@ -20,8 +21,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -36,18 +35,18 @@ public class DocumentService {
     private final DocumentRepository documentRepository;
     private final CategoryService categoryService;    
     private final DocumentMapper documentMapper;
-    private final FileStorageService fileStorageService;
+    private final ObjectStorageService objectStorageService;
     private final RabbitTemplate rabbitTemplate;
 
     public DocumentService(DocumentRepository documentRepository,
                            CategoryService categoryService,
                            DocumentMapper documentMapper,
-                           FileStorageService fileStorageService,
+                           ObjectStorageService objectStorageService,
                             RabbitTemplate rabbitTemplate) {
         this.documentRepository = documentRepository;
         this.categoryService = categoryService;
         this.documentMapper = documentMapper;
-        this.fileStorageService = fileStorageService;
+        this.objectStorageService = objectStorageService;
         this.rabbitTemplate = rabbitTemplate;
     }
 
@@ -71,11 +70,11 @@ public class DocumentService {
     }
 
     public DocumentResponseDto storeFile(MultipartFile file, String title, Long categoryId) {
-        String rawFilename = fileStorageService.sanitizeFilename(file.getOriginalFilename());
+        String rawFilename = objectStorageService.sanitizeFilename(file.getOriginalFilename());
         log.info("Upload received: file='{}', size={} bytes, type={}, categoryId={}",
                 LogSanitizer.sanitize(rawFilename), file.getSize(),
                 LogSanitizer.sanitize(file.getContentType()), categoryId);
-        Path targetLocation = fileStorageService.store(file);
+        String objectKey = objectStorageService.store(file);
 
         try {
             Category category = categoryService.findEntityById(categoryId);
@@ -85,7 +84,7 @@ public class DocumentService {
                     .originalFileName(rawFilename)
                     .fileType(file.getContentType())
                     .fileSize(file.getSize())
-                    .storagePath(targetLocation.toString())
+                    .storagePath(objectKey)
                     .status(Document.DocumentStatus.PENDING)
                     .category(category)
                     .build();
@@ -94,7 +93,8 @@ public class DocumentService {
 
             // Send message to RabbitMQ for OCR processing
             try {
-                rabbitTemplate.convertAndSend(RabbitConfig.OCR_QUEUE, savedDocument.getId());
+                OcrMessageDto message = new OcrMessageDto(savedDocument.getId(), objectStorageService.getBucket(), objectKey);
+                rabbitTemplate.convertAndSend(RabbitConfig.OCR_QUEUE, message);
                 log.info("Successfully sent OCR message for document ID: {} to queue: {}", savedDocument.getId(), RabbitConfig.OCR_QUEUE);
             } catch (Exception ex) {
                 log.error("Failed to send message to RabbitMQ for document ID: {}", savedDocument.getId(), ex);
@@ -103,10 +103,10 @@ public class DocumentService {
 
             return documentMapper.toDto(savedDocument);
         } catch (Exception ex) {
-            // Rollback physical file if DB insertion or mapping fails
+            // Rollback: remove the stored object if DB insertion, messaging or mapping fails
             log.error("Saving metadata for '{}' failed, removing stored file again",
                     LogSanitizer.sanitize(rawFilename), ex);
-            fileStorageService.deleteQuietly(targetLocation);
+            objectStorageService.deleteQuietly(objectKey);
             throw ex;
         }
     }
@@ -116,7 +116,7 @@ public class DocumentService {
         Document doc = documentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Document not found with ID: " + id));
 
-        return fileStorageService.loadAsResource(doc.getStoragePath());
+        return objectStorageService.load(doc.getStoragePath());
     }
 
     public DocumentResponseDto updateDocument(Long id, DocumentUpdateDto dto) {
@@ -140,10 +140,7 @@ public class DocumentService {
         Document doc = documentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Document not found with ID: " + id));
 
-        if (doc.getStoragePath() != null) {
-            fileStorageService.deleteQuietly(Paths.get(doc.getStoragePath()));
-        }
-
+        objectStorageService.deleteQuietly(doc.getStoragePath());
         documentRepository.delete(doc);
         log.info("Document {} deleted", id);
     }

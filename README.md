@@ -24,9 +24,9 @@ This repository is structured as a **Monorepo** and contains all microservices a
 
 The system processes uploaded PDF documents asynchronously through a queue-based pipeline:
 
-1. **Upload & Storage**: The Web UI sends documents to the REST API server, which stores raw files in **MinIO** object storage and metadata in **PostgreSQL**.
+1. **Upload & Storage**: The Web UI sends documents to the REST API server, which stores raw files in **RustFS** object storage (S3-compatible) and metadata in **PostgreSQL**.
 2. **Message Queue**: An upload event is pushed to **RabbitMQ**.
-3. **OCR Worker**: Picks up the message, fetches the PDF from MinIO, executes OCR text extraction via Tesseract, and sends extracted text to the queue.
+3. **OCR Worker**: Picks up the message, fetches the PDF from RustFS, executes OCR text extraction via Tesseract, and sends extracted text to the queue.
 4. **ElasticSearch Indexer**: Indexes extracted text for full-text and fuzzy search.
 5. **GenAI Worker**: Passes extracted text to **Google Gemini** to generate an automated document summary, which is stored back into PostgreSQL.
 
@@ -34,7 +34,7 @@ The system processes uploaded PDF documents asynchronously through a queue-based
 
 ## Features
 
--  **Document Upload & Archiving**: Secure object storage with MinIO.
+-  **Document Upload & Archiving**: Secure object storage with RustFS.
 -  **Full-Text & Fuzzy Search**: Powered by ElasticSearch for fast retrieval.
 -  **Automated OCR Pipeline**: Asynchronous optical character recognition using Tesseract.
 -  **AI-Powered Summarization**: Automatic document summaries generated via Google Gemini.
@@ -47,7 +47,7 @@ The system processes uploaded PDF documents asynchronously through a queue-based
 
 - **Backend Framework**: Java 25 / Spring Boot 3.5+
 - **Database**: PostgreSQL
-- **Object Storage**: MinIO
+- **Object Storage**: RustFS (S3-compatible, accessed via the AWS SDK for Java)
 - **Search Engine**: ElasticSearch
 - **Message Broker**: RabbitMQ
 - **OCR Engine**: Tesseract / Ghostscript

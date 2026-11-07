@@ -19,7 +19,22 @@
 
     <properties>
         <java.version>25</java.version>
+        <aws-sdk.version>2.57.1</aws-sdk.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Keeps all AWS SDK modules on the same version -->
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${aws-sdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
         <!-- JPA / ORM (Hibernate, Repositories for PostgreSQL) -->
         <dependency>
@@ -35,6 +50,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+        <!-- S3 client (object storage in RustFS, which speaks the S3 API) -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
         </dependency>
 
         <dependency>

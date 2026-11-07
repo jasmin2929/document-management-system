@@ -46,8 +46,13 @@ spring:
 
 # Custom Application Configuration (DMS)
 dms:
-  upload:
-    dir: ${DMS_UPLOAD_DIR:./uploads}
+  # Object storage (RustFS, S3-compatible) for the uploaded files
+  storage:
+    endpoint: ${DMS_STORAGE_ENDPOINT:http://rustfs:9000}
+    access-key: ${DMS_STORAGE_ACCESS_KEY:dms_storage_user}
+    secret-key: ${DMS_STORAGE_SECRET_KEY:dms_storage_password_change_me}
+    bucket: ${DMS_STORAGE_BUCKET:dms-documents}
+    region: ${DMS_STORAGE_REGION:us-east-1}
   cors:
     allowed-origins: ${DMS_CORS_ALLOWED_ORIGINS:http://localhost,http://localhost:80,http://localhost:5173}
 

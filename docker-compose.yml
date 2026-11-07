@@ -43,6 +43,30 @@ services:
       retries: 5
       
   # ==========================================
+  # RustFS Object Storage (S3-compatible, + Web Console)
+  # ==========================================
+  rustfs:
+    image: rustfs/rustfs:1.0.3
+    container_name: dms-rustfs
+    restart: always
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-dms_storage_user}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-dms_storage_password_change_me}
+      RUSTFS_CONSOLE_ENABLE: "true"
+      # empty = write logs to stdout, so they show up in `docker compose logs rustfs`
+      RUSTFS_OBS_LOG_DIRECTORY: ""
+    ports:
+      - "${RUSTFS_PORT:-9000}:9000"
+      - "${RUSTFS_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - rustfs-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:9000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ==========================================
   # OCR Worker Service (Python)
   # ==========================================
   ocr-worker:
@@ -77,17 +101,20 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-db:5432/${POSTGRES_DB:-dms_db}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-dms_user}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-dms_password_change_me}
-      DMS_UPLOAD_DIR: /app/uploads
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-dms_user}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-dms_password_change_me}
-    volumes:
-      - uploads-data:/app/uploads
+      DMS_STORAGE_ENDPOINT: http://rustfs:9000
+      DMS_STORAGE_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-dms_storage_user}
+      DMS_STORAGE_SECRET_KEY: ${RUSTFS_SECRET_KEY:-dms_storage_password_change_me}
+      DMS_STORAGE_BUCKET: ${RUSTFS_BUCKET_NAME:-dms-documents}
     depends_on:
       postgres-db:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      rustfs:
         condition: service_healthy
 
   # ==========================================
@@ -106,5 +133,5 @@ services:
       
 volumes:
   postgres-data:
-  uploads-data:
   rabbitmq-data:
+  rustfs-data:
