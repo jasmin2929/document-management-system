@@ -51,6 +51,11 @@ dms:
     secret-key: ${DMS_STORAGE_SECRET_KEY:dms_storage_password_change_me}
     bucket: ${DMS_STORAGE_BUCKET:dms-documents}
     region: ${DMS_STORAGE_REGION:us-east-1}
+  elasticsearch:
+    url: ${DMS_ELASTICSEARCH_URL:http://elasticsearch:9200}
+    username: ${DMS_ELASTICSEARCH_USERNAME:elastic}
+    password: ${DMS_ELASTICSEARCH_PASSWORD:elastic_password_change_me}
+    index: ${DMS_ELASTICSEARCH_INDEX:documents}
   cors:
     allowed-origins: ${DMS_CORS_ALLOWED_ORIGINS:http://localhost,http://localhost:80,http://localhost:5173}
 

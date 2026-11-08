@@ -53,6 +53,9 @@ class DocumentServiceTest {
     @Mock
     private RabbitTemplate rabbitTemplate;
 
+    @Mock
+    private SearchService searchService;
+
     @InjectMocks
     private DocumentService documentService;
 
@@ -331,6 +334,31 @@ class DocumentServiceTest {
             documentService.applyOcrResult(new OcrResultDto(99L, Document.DocumentStatus.PROCESSED, "text"));
 
             verify(documentRepository, never()).save(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("search()")
+    class SearchTests {
+
+        @Test
+        @DisplayName("returns the matching documents in Elasticsearch's relevance order, skipping deleted ones")
+        void search_KeepsRelevanceOrder() {
+            Document second = Document.builder().id(2L).title("Second.pdf").build();
+            DocumentResponseDto secondDto = DocumentResponseDto.builder().id(2L).title("Second.pdf").build();
+            given(searchService.searchDocumentIds("hello")).willReturn(List.of(2L, 99L, 1L));
+            given(documentRepository.findAllById(List.of(2L, 99L, 1L))).willReturn(List.of(sampleDocument, second));
+            given(documentMapper.toDto(second)).willReturn(secondDto);
+            given(documentMapper.toDto(sampleDocument)).willReturn(sampleResponseDto);
+
+            assertThat(documentService.search(" hello ")).containsExactly(secondDto, sampleResponseDto);
+        }
+
+        @Test
+        @DisplayName("blank search term is rejected")
+        void search_BlankQuery_Throws() {
+            assertThatThrownBy(() -> documentService.search("  ")).isInstanceOf(IllegalArgumentException.class);
+            verifyNoInteractions(searchService);
         }
     }
 }

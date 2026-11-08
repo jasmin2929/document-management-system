@@ -28,11 +28,10 @@ spring:
         format_sql: true
     database-platform: org.hibernate.dialect.H2Dialect
 
-  # deactivate Autoconfiguration for RabbitMQ/ElasticSearch if these are not running locally
+  # RabbitMQ is not running during tests
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration
-      - org.springframework.boot.autoconfigure.data.elasticsearch.ElasticsearchDataAutoConfiguration
 
 # S3Client is replaced by a mock in the context test, these values only satisfy the configuration binding
 dms:

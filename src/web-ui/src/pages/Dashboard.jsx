@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getAllCategories } from '../api/categories';
-import { getAllDocuments } from '../api/documents';
+import { getAllDocuments, searchDocuments } from '../api/documents';
 import CategoryBar from '../components/CategoryBar';
 import DocumentList from '../components/DocumentList';
 import UploadDialog from '../components/UploadDialog';
@@ -13,6 +13,9 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [searchResult, setSearchResult] = useState(null);
+  const [searching, setSearching] = useState(false);
 
   const loadCategories = useCallback(async () => {
     setCategories(await getAllCategories());
@@ -48,7 +51,28 @@ export default function Dashboard() {
     reload(loadDocuments);
   }
 
-  const visibleDocuments = documents.filter((document) => matchesFilter(document, filter));
+  async function handleSearch(event) {
+    event.preventDefault();
+    const term = query.trim();
+    if (!term) {
+      setSearchResult(null);
+      return;
+    }
+    setSearching(true);
+    setLoadError(null);
+    try {
+      setSearchResult({ term, documents: await searchDocuments(term) });
+    } catch (error) {
+      setLoadError(error.message);
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  const listedDocuments = searchResult ? searchResult.documents : documents;
+  const visibleDocuments = listedDocuments.filter((document) => matchesFilter(document, filter));
+  let emptyMessage = filter === FILTER_ALL ? 'No documents yet.' : 'No documents in this category.';
+  if (searchResult) emptyMessage = `No documents match "${searchResult.term}".`;
   const defaultUploadCategory = filter !== FILTER_ALL && filter !== FILTER_NONE ? filter : '';
 
   return (
@@ -57,12 +81,32 @@ export default function Dashboard() {
         <div>
           <h1 className="page-title">Dashboard</h1>
           <div className="page-subtitle">
-            {documents.length} {documents.length === 1 ? 'document' : 'documents'}
+            {searchResult
+              ? `${searchResult.documents.length} ${searchResult.documents.length === 1 ? 'result' : 'results'} for "${searchResult.term}"`
+              : `${documents.length} ${documents.length === 1 ? 'document' : 'documents'}`}
           </div>
         </div>
-        <button type="button" className="btn btn--primary" onClick={() => setUploadOpen(true)}>
-          Upload document
-        </button>
+        <div className="page-header__actions">
+          <form className="search-form" role="search" onSubmit={handleSearch}>
+            <input
+              type="search"
+              className="input"
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                if (!event.target.value) setSearchResult(null);
+              }}
+              placeholder="Search document text"
+              aria-label="Search document text"
+            />
+            <button type="submit" className="btn btn--secondary" disabled={searching}>
+              {searching ? 'Searching…' : 'Search'}
+            </button>
+          </form>
+          <button type="button" className="btn btn--primary" onClick={() => setUploadOpen(true)}>
+            Upload document
+          </button>
+        </div>
       </div>
 
       <CategoryBar
@@ -84,7 +128,7 @@ export default function Dashboard() {
       ) : (
         <DocumentList
           documents={visibleDocuments}
-          emptyMessage={filter === FILTER_ALL ? 'No documents yet.' : 'No documents in this category.'}
+          emptyMessage={emptyMessage}
         />
       )}
 

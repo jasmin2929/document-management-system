@@ -28,6 +28,11 @@ public class DocumentController {
         return ResponseEntity.ok(documentService.findAll(categoryId));
     }
 
+    @GetMapping("/search")
+    public ResponseEntity<List<DocumentResponseDto>> searchDocuments(@RequestParam("q") String query) {
+        return ResponseEntity.ok(documentService.search(query));
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<DocumentResponseDto> getDocumentById(@PathVariable Long id) {
         return ResponseEntity.ok(documentService.findById(id));

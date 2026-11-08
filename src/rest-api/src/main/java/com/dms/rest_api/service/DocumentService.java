@@ -23,6 +23,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -35,17 +38,20 @@ public class DocumentService {
     private final DocumentMapper documentMapper;
     private final ObjectStorageService objectStorageService;
     private final RabbitTemplate rabbitTemplate;
+    private final SearchService searchService;
 
     public DocumentService(DocumentRepository documentRepository,
                            CategoryService categoryService,
                            DocumentMapper documentMapper,
                            ObjectStorageService objectStorageService,
-                            RabbitTemplate rabbitTemplate) {
+                           RabbitTemplate rabbitTemplate,
+                           SearchService searchService) {
         this.documentRepository = documentRepository;
         this.categoryService = categoryService;
         this.documentMapper = documentMapper;
         this.objectStorageService = objectStorageService;
         this.rabbitTemplate = rabbitTemplate;
+        this.searchService = searchService;
     }
 
     @Transactional(readOnly = true)
@@ -58,6 +64,23 @@ public class DocumentService {
         return docs.stream()
                 .map(documentMapper::toDto)
                 .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<DocumentResponseDto> search(String query) {
+        if (query == null || query.isBlank()) {
+            throw new IllegalArgumentException("Search term must not be empty");
+        }
+        List<Long> ids = searchService.searchDocumentIds(query.trim());
+        Map<Long, Document> byId = documentRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(Document::getId, Function.identity()));
+        List<DocumentResponseDto> result = ids.stream()
+                .map(byId::get)
+                .filter(Objects::nonNull)
+                .map(documentMapper::toDto)
+                .toList();
+        log.info("Search for '{}' found {} documents", LogSanitizer.sanitize(query), result.size());
+        return result;
     }
 
     @Transactional(readOnly = true)

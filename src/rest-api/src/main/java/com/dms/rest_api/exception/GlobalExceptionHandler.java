@@ -81,6 +81,17 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
+    @ExceptionHandler(SearchException.class)
+    public ResponseEntity<Map<String, Object>> handleSearch(SearchException ex) {
+        log.error("Search failed: {}", ex.getCause().getMessage());
+        Map<String, Object> body = new HashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.SERVICE_UNAVAILABLE.value());
+        body.put("error", "Search Unavailable");
+        body.put("message", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
     @ExceptionHandler(MessagingException.class)
     public ResponseEntity<Map<String, Object>> handleMessaging(MessagingException ex) {
         Map<String, Object> body = new HashMap<>();

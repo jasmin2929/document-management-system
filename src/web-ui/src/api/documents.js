@@ -4,6 +4,10 @@ export function getAllDocuments(categoryId) {
   return apiGet('/documents', categoryId ? { categoryId } : undefined);
 }
 
+export function searchDocuments(query) {
+  return apiGet('/documents/search', { q: query });
+}
+
 export function getDocumentById(id) {
   return apiGet(`/documents/${id}`);
 }

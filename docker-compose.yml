@@ -162,6 +162,10 @@ services:
       DMS_STORAGE_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-dms_storage_user}
       DMS_STORAGE_SECRET_KEY: ${RUSTFS_SECRET_KEY:-dms_storage_password_change_me}
       DMS_STORAGE_BUCKET: ${RUSTFS_BUCKET_NAME:-dms-documents}
+      DMS_ELASTICSEARCH_URL: http://elasticsearch:9200
+      DMS_ELASTICSEARCH_USERNAME: elastic
+      DMS_ELASTICSEARCH_PASSWORD: ${ELASTIC_PASSWORD:-elastic_password_change_me}
+      DMS_ELASTICSEARCH_INDEX: documents
     depends_on:
       postgres-db:
         condition: service_healthy

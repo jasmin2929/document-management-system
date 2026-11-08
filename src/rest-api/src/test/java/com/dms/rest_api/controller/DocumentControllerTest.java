@@ -65,6 +65,16 @@ class DocumentControllerTest {
     }
 
     @Test
+    @DisplayName("GET /api/documents/search?q= - Returns the matching documents")
+    void searchDocuments_ReturnsOkList() throws Exception {
+        given(documentService.search("hello")).willReturn(List.of(sampleDto));
+
+        mockMvc.perform(get("/api/documents/search").param("q", "hello"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].title").value("Report.pdf"));
+    }
+
+    @Test
     @DisplayName("POST /api/documents/upload - Processes multipart fileupload")
     void uploadDocument_ReturnsCreated() throws Exception {
         MockMultipartFile file = new MockMultipartFile("file", "Report.pdf", "application/pdf", "data".getBytes());

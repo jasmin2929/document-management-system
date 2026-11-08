@@ -118,6 +118,34 @@ select {
   font-size: 14px;
 }
 
+.page-header__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.search-form {
+  display: flex;
+  gap: 6px;
+}
+
+.search-form .input {
+  width: 240px;
+}
+
+@media (max-width: 640px) {
+  .page-header__actions,
+  .search-form {
+    width: 100%;
+  }
+
+  .search-form .input {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+}
+
 /* ---------- Buttons & inputs ---------- */
 
 .btn {
