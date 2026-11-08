@@ -31,7 +31,7 @@ public class StorageConfig {
                         AwsBasicCredentials.create(properties.accessKey(), properties.secretKey())))
                 // RustFS serves buckets as http://rustfs:9000/<bucket>, not as <bucket>.rustfs:9000 (AWS style)
                 .forcePathStyle(true)
-                // Only send/verify checksums when the S3 API requires them; newer AWS defaults are not supported by every S3 server
+                // newer AWS checksum defaults are not supported by every S3 server
                 .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
                 .responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED)
                 .build();

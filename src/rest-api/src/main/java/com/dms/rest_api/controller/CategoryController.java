@@ -10,9 +10,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-/**
- * REST Controller exposing API endpoints for category management.
- */
 @RestController
 @RequestMapping("/api/categories")
 public class CategoryController {

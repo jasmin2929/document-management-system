@@ -5,14 +5,11 @@ import lombok.*;
 
 import java.time.LocalDateTime;
 
-/**
- * Entity representing a managed document along with its file metadata and processing state.
- */
 @Entity
 @Table(name = "documents")
 @Getter
 @Setter
-// Exclude parent entity from Lombok toString and equals/hashCode to prevent cyclic loops
+// bidirectional relation: including it would recurse endlessly
 @ToString(exclude = "category")
 @EqualsAndHashCode(exclude = "category")
 @NoArgsConstructor
@@ -48,25 +45,15 @@ public class Document {
 
     private LocalDateTime lastModifiedDate;
 
-    /**
-     * Many-To-One relationship to the parent category.
-     * Uses LAZY fetching to prevent unnecessary database queries when loading documents.
-     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "category_id")
     private Category category;
 
-    /**
-     * JPA Lifecycle Hook to automatically track entity update timestamps.
-     */
     @PreUpdate
     public void preUpdate() {
         this.lastModifiedDate = LocalDateTime.now();
     }
 
-    /**
-     * Processing status lifecycle of the document within the DMS.
-     */
     public enum DocumentStatus {
         PENDING,
         PROCESSING,

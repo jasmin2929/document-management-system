@@ -1,58 +1,32 @@
-"""Layer-specific exceptions of the OCR worker.
+"""One exception per layer, so callers never depend on pika, boto3 or elasticsearch.
 
-Every layer raises its own exception type, so the caller can decide how to
-react (retry, drop the message, stop the service, ...) without depending on
-the libraries used inside that layer (e.g. pika or json).
-
-Hierarchy::
-
-    OcrWorkerException
-    ├── ConfigurationException      (configuration layer)
-    ├── BrokerConnectionException   (messaging layer)
-    ├── MessageFormatException      (messaging layer)
-    ├── StorageException            (storage layer)
-    └── OcrProcessingException      (processing layer)
+Configuration and broker errors stop the worker; all others only reject the current message.
 """
 
 
 class OcrWorkerException(Exception):
-    """Base class for all exceptions raised by the OCR worker.
-
-    Catching this type handles every expected worker error at once.
-    """
+    pass
 
 
 class ConfigurationException(OcrWorkerException):
-    """Configuration layer: an environment variable is missing or invalid.
-
-    Fatal: the worker exits immediately (exit code 2).
-    """
+    pass
 
 
 class BrokerConnectionException(OcrWorkerException):
-    """Messaging layer: the RabbitMQ broker cannot be reached or the connection was lost.
-
-    Fatal: the worker exits (exit code 1) and Docker restarts it.
-    """
+    pass
 
 
 class MessageFormatException(OcrWorkerException):
-    """Messaging layer: a received message cannot be parsed.
-
-    Affects only that message: it is rejected and the worker keeps running.
-    """
+    pass
 
 
 class StorageException(OcrWorkerException):
-    """Storage layer: the PDF cannot be downloaded from the object storage (RustFS).
-
-    E.g. the object or bucket does not exist, access is denied or RustFS is not reachable.
-    Affects only that message: it is rejected and the worker keeps running.
-    """
+    pass
 
 
 class OcrProcessingException(OcrWorkerException):
-    """Processing layer: a document cannot be processed.
+    pass
 
-    Affects only that message: it is rejected and the worker keeps running.
-    """
+
+class IndexingException(OcrWorkerException):
+    pass

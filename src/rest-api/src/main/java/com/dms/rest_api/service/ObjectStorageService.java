@@ -28,10 +28,6 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 
-/**
- * Service storing the uploaded files in the S3-compatible object storage (RustFS).
- * Files are addressed by an object key, e.g. "documents/3f2a...c1b.pdf", which is saved in Document.storagePath.
- */
 @Slf4j
 @Service
 public class ObjectStorageService {
@@ -50,9 +46,6 @@ public class ObjectStorageService {
         return bucket;
     }
 
-    /**
-     * Creates the document bucket if it does not exist yet (called once at startup).
-     */
     public void ensureBucketExists() {
         try {
             s3Client.headBucket(HeadBucketRequest.builder().bucket(bucket).build());
@@ -63,10 +56,7 @@ public class ObjectStorageService {
         }
     }
 
-    /**
-     * Uploads a file to the bucket and returns its object key.
-     * The key is a random UUID, so user-controlled filenames never end up in the storage path.
-     */
+    // Random UUID key: user-controlled file names never end up in the storage path
     public String store(MultipartFile file) {
         validateFile(file);
 
@@ -91,9 +81,6 @@ public class ObjectStorageService {
         }
     }
 
-    /**
-     * Downloads an object and returns it as a readable Spring Resource.
-     */
     public Resource load(String objectKey) {
         try {
             ResponseBytes<GetObjectResponse> object = s3Client.getObjectAsBytes(
@@ -108,9 +95,6 @@ public class ObjectStorageService {
         }
     }
 
-    /**
-     * Deletes an object without throwing an exception if it cannot be removed.
-     */
     public void deleteQuietly(String objectKey) {
         if (objectKey == null) return;
         try {
@@ -122,9 +106,6 @@ public class ObjectStorageService {
         }
     }
 
-    /**
-     * Extracts and cleans the original filename.
-     */
     public String sanitizeFilename(String originalFilename) {
         String rawFilename = StringUtils.cleanPath(Objects.requireNonNull(originalFilename));
         if (rawFilename.contains("..")) {

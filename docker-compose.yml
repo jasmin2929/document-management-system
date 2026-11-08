@@ -1,7 +1,4 @@
 services:
-  # ==========================================
-  # PostgreSQL Database Service
-  # ==========================================
   postgres-db:
     image: postgres:16-alpine
     container_name: dms-postgres
@@ -20,9 +17,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ==========================================
-  # RabbitMQ Message Broker (+ Management UI)
-  # ==========================================
   rabbitmq:
     image: rabbitmq:4-management-alpine
     container_name: dms-rabbitmq
@@ -42,9 +36,6 @@ services:
       timeout: 5s
       retries: 5
       
-  # ==========================================
-  # RustFS Object Storage (S3-compatible, + Web Console)
-  # ==========================================
   rustfs:
     image: rustfs/rustfs:1.0.3
     container_name: dms-rustfs
@@ -53,7 +44,7 @@ services:
       RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-dms_storage_user}
       RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-dms_storage_password_change_me}
       RUSTFS_CONSOLE_ENABLE: "true"
-      # empty = write logs to stdout, so they show up in `docker compose logs rustfs`
+      # empty = log to stdout
       RUSTFS_OBS_LOG_DIRECTORY: ""
     ports:
       - "${RUSTFS_PORT:-9000}:9000"
@@ -66,9 +57,58 @@ services:
       timeout: 5s
       retries: 10
 
-  # ==========================================
-  # OCR Worker Service (Python)
-  # ==========================================
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.1.3
+    container_name: dms-elasticsearch
+    restart: always
+    environment:
+      discovery.type: single-node
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-elastic_password_change_me}
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports:
+      - "${ELASTICSEARCH_PORT:-9200}:9200"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs -u elastic:$${ELASTIC_PASSWORD} http://localhost:9200/_cluster/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  elasticsearch-setup:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.1.3
+    container_name: dms-elasticsearch-setup
+    restart: "no"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-elastic_password_change_me}
+      KIBANA_PASSWORD: ${KIBANA_PASSWORD:-kibana_password_change_me}
+    command:
+      - bash
+      - -c
+      - |
+        curl -fsS -u "elastic:$${ELASTIC_PASSWORD}" -H 'Content-Type: application/json' \
+          -X POST http://elasticsearch:9200/_security/user/kibana_system/_password \
+          -d "{\"password\":\"$${KIBANA_PASSWORD}\"}"
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.1.3
+    container_name: dms-kibana
+    restart: always
+    depends_on:
+      elasticsearch-setup:
+        condition: service_completed_successfully
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      ELASTICSEARCH_USERNAME: kibana_system
+      ELASTICSEARCH_PASSWORD: ${KIBANA_PASSWORD:-kibana_password_change_me}
+    ports:
+      - "${KIBANA_PORT:-5601}:5601"
+
   ocr-worker:
     build:
       context: ./src/ocr-worker
@@ -80,26 +120,28 @@ services:
         condition: service_healthy
       rustfs:
         condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: ${RABBITMQ_DEFAULT_USER:-dms_user}
       RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-dms_password_change_me}
       OCR_QUEUE: ocr-queue
+      OCR_RESULT_QUEUE: ocr-result-queue
       LOG_LEVEL: INFO
-      # Tesseract languages (German + English) and limits for one document
       OCR_LANGUAGE: ${OCR_LANGUAGE:-deu+eng}
       OCR_DPI: 300
       OCR_MAX_PAGES: 50
-      # RustFS object storage: the worker downloads the uploaded PDFs from here
       STORAGE_ENDPOINT: http://rustfs:9000
       STORAGE_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-dms_storage_user}
       STORAGE_SECRET_KEY: ${RUSTFS_SECRET_KEY:-dms_storage_password_change_me}
       STORAGE_BUCKET: ${RUSTFS_BUCKET_NAME:-dms-documents}
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      ELASTICSEARCH_USER: elastic
+      ELASTICSEARCH_PASSWORD: ${ELASTIC_PASSWORD:-elastic_password_change_me}
+      ELASTICSEARCH_INDEX: documents
 
-  # ==========================================
-  # Spring Boot REST API Service
-  # ==========================================
   rest-api:
     build:
       context: ./src/rest-api
@@ -128,9 +170,6 @@ services:
       rustfs:
         condition: service_healthy
 
-  # ==========================================
-  # Web UI Service (React + Nginx)
-  # ==========================================
   web-ui:
     build:
       context: ./src/web-ui
@@ -146,3 +185,4 @@ volumes:
   postgres-data:
   rabbitmq-data:
   rustfs-data:
+  elasticsearch-data:

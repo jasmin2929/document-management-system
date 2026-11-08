@@ -1,9 +1,6 @@
 package com.dms.rest_api.logging;
 
-/**
- * Makes user-controlled values (file names, titles, category names) safe to write into log files.
- * Prevents log injection (CWE-117): a value containing line breaks could otherwise forge fake log entries.
- */
+/** Prevents log injection (CWE-117): user input with line breaks could forge log entries. */
 public final class LogSanitizer {
 
     static final int MAX_LENGTH = 200;
@@ -11,9 +8,6 @@ public final class LogSanitizer {
     private LogSanitizer() {
     }
 
-    /**
-     * Replaces control characters (e.g. \r, \n, \t) with '_' and truncates overly long values.
-     */
     public static String sanitize(String value) {
         if (value == null) {
             return "null";

@@ -1,29 +1,38 @@
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from ocr_worker import __main__ as entry
-from ocr_worker.exceptions import BrokerConnectionException, OcrProcessingException, StorageException
+from ocr_worker.exceptions import (
+    BrokerConnectionException,
+    IndexingException,
+    OcrProcessingException,
+    StorageException,
+)
 
 ENV = {
     "RABBITMQ_USER": "user", "RABBITMQ_PASSWORD": "secret",
     "STORAGE_ACCESS_KEY": "storage-user", "STORAGE_SECRET_KEY": "storage-secret",
+    "ELASTICSEARCH_PASSWORD": "es-secret",
 }
 
 
 # The OCR tool check and the object storage are replaced by mocks, so these tests
-# need neither Ghostscript/Tesseract nor a running RustFS.
+# need neither Ghostscript/Tesseract nor a running RustFS or Elasticsearch.
+# The last two mock arguments of every test are (IndexingWorker class, Elasticsearch client factory).
+@patch("ocr_worker.__main__.create_elasticsearch_client")
+@patch("ocr_worker.__main__.IndexingWorker")
 @patch("ocr_worker.__main__.create_s3_client")
 @patch("ocr_worker.__main__.ObjectStorageClient")
 @patch("ocr_worker.__main__.OcrEngine")
 class MainTest(unittest.TestCase):
     @patch.dict("os.environ", {}, clear=True)
-    def test_invalid_configuration_returns_exit_code_2(self, _engine_cls, _storage_cls, _s3_factory):
+    def test_invalid_configuration_returns_exit_code_2(self, _engine_cls, _storage_cls, _s3_factory, *_es):
         with self.assertLogs("ocr_worker", level="CRITICAL"):
             self.assertEqual(2, entry.main())
 
     @patch.dict("os.environ", ENV, clear=True)
     @patch("ocr_worker.__main__.OcrQueueConsumer")
-    def test_missing_ocr_tools_returns_exit_code_3(self, consumer_cls, engine_cls, _storage_cls, _s3_factory):
+    def test_missing_ocr_tools_returns_exit_code_3(self, consumer_cls, engine_cls, _storage_cls, _s3_factory, *_es):
         engine_cls.return_value.check_tools.side_effect = OcrProcessingException("Tesseract is not installed")
         with self.assertLogs("ocr_worker", level="CRITICAL"):
             self.assertEqual(3, entry.main())
@@ -32,14 +41,14 @@ class MainTest(unittest.TestCase):
     @patch.dict("os.environ", dict(ENV, OCR_LANGUAGE="eng", OCR_DPI="200"), clear=True)
     @patch("ocr_worker.__main__.signal.signal")
     @patch("ocr_worker.__main__.OcrQueueConsumer")
-    def test_ocr_engine_is_created_from_settings(self, _consumer_cls, _signal, engine_cls, _storage, _s3):
+    def test_ocr_engine_is_created_from_settings(self, _consumer_cls, _signal, engine_cls, _storage, _s3, *_es):
         entry.main()
         engine_cls.assert_called_once_with(language="eng", dpi=200, max_pages=50, timeout_seconds=120.0)
 
     @patch.dict("os.environ", ENV, clear=True)
     @patch("ocr_worker.__main__.signal.signal")
     @patch("ocr_worker.__main__.OcrQueueConsumer")
-    def test_normal_run_returns_0_and_closes_connection(self, consumer_cls, _signal, _engine_cls, _storage, _s3):
+    def test_normal_run_returns_0_and_closes_connection(self, consumer_cls, _signal, _engine_cls, _storage, _s3, *_es):
         consumer = consumer_cls.return_value
         self.assertEqual(0, entry.main())
         consumer.connect.assert_called_once()
@@ -49,7 +58,7 @@ class MainTest(unittest.TestCase):
     @patch.dict("os.environ", ENV, clear=True)
     @patch("ocr_worker.__main__.signal.signal")
     @patch("ocr_worker.__main__.OcrQueueConsumer")
-    def test_broker_unreachable_returns_1(self, consumer_cls, _signal, _engine_cls, _storage_cls, _s3_factory):
+    def test_broker_unreachable_returns_1(self, consumer_cls, _signal, _engine_cls, _storage_cls, _s3_factory, *_es):
         consumer = consumer_cls.return_value
         consumer.connect.side_effect = BrokerConnectionException("down")
         with self.assertLogs("ocr_worker", level="CRITICAL"):
@@ -59,7 +68,7 @@ class MainTest(unittest.TestCase):
     @patch.dict("os.environ", ENV, clear=True)
     @patch("ocr_worker.__main__.signal.signal")
     @patch("ocr_worker.__main__.OcrQueueConsumer")
-    def test_storage_not_ready_is_logged_but_not_fatal(self, consumer_cls, _signal, _engine_cls, storage_cls, _s3):
+    def test_storage_not_ready_is_logged_but_not_fatal(self, consumer_cls, _signal, _engine_cls, storage_cls, _s3, *_es):
         storage_cls.return_value.check_bucket.side_effect = StorageException("not reachable")
         with self.assertLogs("ocr_worker", level="WARNING") as logs:
             self.assertEqual(0, entry.main())
@@ -69,7 +78,7 @@ class MainTest(unittest.TestCase):
     @patch.dict("os.environ", ENV, clear=True)
     @patch("ocr_worker.__main__.signal.signal")
     @patch("ocr_worker.__main__.OcrQueueConsumer")
-    def test_storage_client_is_created_from_settings(self, _consumer_cls, _signal, _engine_cls, storage_cls, s3):
+    def test_storage_client_is_created_from_settings(self, _consumer_cls, _signal, _engine_cls, storage_cls, s3, *_es):
         entry.main()
         storage_cls.assert_called_once_with(
             s3.return_value, default_bucket="dms-documents", max_file_size=50 * 1024 * 1024
@@ -78,11 +87,30 @@ class MainTest(unittest.TestCase):
     @patch.dict("os.environ", ENV, clear=True)
     @patch("ocr_worker.__main__.signal.signal")
     @patch("ocr_worker.__main__.OcrQueueConsumer")
-    def test_shutdown_signal_stops_consumer(self, consumer_cls, signal_mock, _engine_cls, _storage, _s3):
+    def test_shutdown_signal_stops_consumer(self, consumer_cls, signal_mock, _engine_cls, _storage, _s3, *_es):
         entry.main()
         handler = signal_mock.call_args_list[0].args[1]
         handler(15, None)  # SIGTERM
         consumer_cls.return_value.stop.assert_called_once()
+
+    @patch.dict("os.environ", ENV, clear=True)
+    @patch("ocr_worker.__main__.signal.signal")
+    @patch("ocr_worker.__main__.OcrQueueConsumer")
+    def test_indexing_worker_is_created_from_settings(self, _consumer_cls, _signal, _engine, _storage, _s3,
+                                                      indexing_cls, es_factory):
+        entry.main()
+        indexing_cls.assert_called_once_with(es_factory.return_value, "documents")
+
+    @patch.dict("os.environ", ENV, clear=True)
+    @patch("ocr_worker.__main__.signal.signal")
+    @patch("ocr_worker.__main__.OcrQueueConsumer")
+    def test_elasticsearch_not_ready_is_logged_but_not_fatal(self, consumer_cls, _signal, _engine, _storage, _s3,
+                                                            indexing_cls, _es_factory):
+        indexing_cls.return_value.check.side_effect = IndexingException("not reachable")
+        with self.assertLogs("ocr_worker", level="WARNING") as logs:
+            self.assertEqual(0, entry.main())
+        self.assertTrue(any("Elasticsearch not ready" in l for l in logs.output))
+        consumer_cls.return_value.start.assert_called_once()
 
 
 if __name__ == "__main__":

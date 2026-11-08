@@ -3,6 +3,7 @@ package com.dms.rest_api.service;
 import com.dms.rest_api.dto.DocumentResponseDto;
 import com.dms.rest_api.dto.DocumentUpdateDto;
 import com.dms.rest_api.dto.OcrMessageDto;
+import com.dms.rest_api.dto.OcrResultDto;
 import com.dms.rest_api.entity.Category;
 import com.dms.rest_api.entity.Document;
 import com.dms.rest_api.exception.MessagingException;
@@ -290,6 +291,46 @@ class DocumentServiceTest {
 
             verify(objectStorageService, times(1)).deleteQuietly(sampleDocument.getStoragePath());
             verify(documentRepository, times(1)).delete(sampleDocument);
+        }
+    }
+
+    @Nested
+    @DisplayName("applyOcrResult()")
+    class OcrResultTests {
+
+        @Test
+        @DisplayName("PROCESSED result sets status and stores the recognized text")
+        void processedResult_UpdatesStatusAndContent() {
+            sampleDocument.setStatus(Document.DocumentStatus.PENDING);
+            given(documentRepository.findById(1L)).willReturn(Optional.of(sampleDocument));
+
+            documentService.applyOcrResult(new OcrResultDto(1L, Document.DocumentStatus.PROCESSED, "Hello World"));
+
+            assertThat(sampleDocument.getStatus()).isEqualTo(Document.DocumentStatus.PROCESSED);
+            assertThat(sampleDocument.getContent()).isEqualTo("Hello World");
+            verify(documentRepository).save(sampleDocument);
+        }
+
+        @Test
+        @DisplayName("FAILED result without content keeps the existing content")
+        void failedResult_KeepsContent() {
+            sampleDocument.setContent("old text");
+            given(documentRepository.findById(1L)).willReturn(Optional.of(sampleDocument));
+
+            documentService.applyOcrResult(new OcrResultDto(1L, Document.DocumentStatus.FAILED, null));
+
+            assertThat(sampleDocument.getStatus()).isEqualTo(Document.DocumentStatus.FAILED);
+            assertThat(sampleDocument.getContent()).isEqualTo("old text");
+        }
+
+        @Test
+        @DisplayName("result for a deleted document is ignored without error")
+        void unknownDocument_IsIgnored() {
+            given(documentRepository.findById(99L)).willReturn(Optional.empty());
+
+            documentService.applyOcrResult(new OcrResultDto(99L, Document.DocumentStatus.PROCESSED, "text"));
+
+            verify(documentRepository, never()).save(any());
         }
     }
 }

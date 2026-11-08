@@ -1,15 +1,7 @@
-"""Entry point of the OCR worker service.
+"""OCR worker entry point (python -m ocr_worker).
 
-Run with ``python -m ocr_worker``. Wires the components together (configuration,
-logging, processor, queue consumer), registers signal handlers for a graceful
-shutdown and translates failures into process exit codes:
-
-* ``0`` - worker stopped normally (e.g. after SIGTERM / CTRL+C)
-* ``1`` - RabbitMQ could not be reached or the connection was lost
-* ``2`` - invalid configuration (missing or malformed environment variables)
-* ``3`` - Ghostscript or Tesseract is not installed or not working
-
-A non-zero exit code lets Docker's restart policy bring the worker back up.
+Exit codes (non-zero lets Docker restart the worker):
+    0 stopped normally, 1 RabbitMQ unreachable/lost, 2 invalid configuration, 3 OCR tools missing
 """
 
 import logging
@@ -20,9 +12,11 @@ from ocr_worker.config import load_settings
 from ocr_worker.exceptions import (
     BrokerConnectionException,
     ConfigurationException,
+    IndexingException,
     OcrProcessingException,
     StorageException,
 )
+from ocr_worker.indexing.indexing_worker import IndexingWorker, create_elasticsearch_client
 from ocr_worker.logging_config import configure_logging
 from ocr_worker.messaging.consumer import OcrQueueConsumer
 from ocr_worker.processing.ocr_engine import OcrEngine
@@ -33,22 +27,12 @@ log = logging.getLogger("ocr_worker")
 
 
 def main() -> int:
-    """Start the OCR worker and block until it is stopped.
-
-    Returns:
-        The process exit code (see module docstring).
-    """
-    # Configure logging with defaults first, so errors while loading the
-    # configuration are already logged in the usual format.
     configure_logging()
     try:
         settings = load_settings()
     except ConfigurationException as ex:
-        # Retrying makes no sense with a broken configuration: fail fast.
         log.critical("Invalid configuration: %s", ex)
         return 2
-
-    # Re-apply logging with the configured log level.
     configure_logging(settings.log_level)
 
     engine = OcrEngine(
@@ -60,10 +44,10 @@ def main() -> int:
     try:
         log.info("OCR tools ready: %s", engine.check_tools())
     except OcrProcessingException as ex:
-        # Without the OCR tools the worker cannot do its job: fail fast.
         log.critical("OCR tools not available: %s", ex)
         return 3
 
+    # Storage and Elasticsearch checks are not fatal: each job reports its own error.
     storage = ObjectStorageClient(
         create_s3_client(settings),
         default_bucket=settings.storage_bucket,
@@ -73,30 +57,31 @@ def main() -> int:
         storage.check_bucket()
         log.info("Object storage ready: %s, bucket '%s'", settings.storage_endpoint, settings.storage_bucket)
     except StorageException as ex:
-        # Not fatal: the REST API creates the bucket on its first start, and each
-        # message reports its own storage error. Log it, so the problem is visible.
         log.warning("Object storage not ready yet, downloads will fail until it is: %s", ex)
 
-    # Dependencies are created here and injected via the constructor,
-    # which keeps the consumer independent and easy to unit-test.
-    consumer = OcrQueueConsumer(settings, OcrProcessor(storage, engine))
+    indexer = IndexingWorker(create_elasticsearch_client(settings), settings.elasticsearch_index)
+    try:
+        log.info("Elasticsearch ready: %s (version %s), index '%s'",
+                 settings.elasticsearch_url, indexer.check(), settings.elasticsearch_index)
+    except IndexingException as ex:
+        log.warning("Elasticsearch not ready yet, indexing will fail until it is: %s", ex)
+
+    consumer = OcrQueueConsumer(settings, OcrProcessor(storage, engine, indexer))
 
     def handle_shutdown(signum, _frame):
-        """Stop consuming when the process receives a termination signal."""
         log.info("Received signal %s, shutting down", signal.Signals(signum).name)
         consumer.stop()
 
-    signal.signal(signal.SIGTERM, handle_shutdown)  # sent by `docker compose stop`
-    signal.signal(signal.SIGINT, handle_shutdown)   # CTRL+C when run locally
+    signal.signal(signal.SIGTERM, handle_shutdown)
+    signal.signal(signal.SIGINT, handle_shutdown)
 
     try:
         consumer.connect()
-        consumer.start()  # blocks until stop() is called or the connection is lost
+        consumer.start()
     except BrokerConnectionException as ex:
         log.critical("%s", ex)
         return 1
     finally:
-        # Always release the connection, whether the worker stopped normally or failed.
         consumer.close()
 
     log.info("OCR worker stopped")

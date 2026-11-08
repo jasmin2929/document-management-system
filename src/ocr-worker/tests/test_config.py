@@ -6,6 +6,7 @@ from ocr_worker.exceptions import ConfigurationException
 BASE_ENV = {
     "RABBITMQ_USER": "user", "RABBITMQ_PASSWORD": "secret",
     "STORAGE_ACCESS_KEY": "storage-user", "STORAGE_SECRET_KEY": "storage-secret",
+    "ELASTICSEARCH_PASSWORD": "es-secret",
 }
 
 
@@ -15,6 +16,7 @@ class LoadSettingsTest(unittest.TestCase):
         self.assertEqual("rabbitmq", settings.rabbitmq_host)
         self.assertEqual(5672, settings.rabbitmq_port)
         self.assertEqual("ocr-queue", settings.ocr_queue)
+        self.assertEqual("ocr-result-queue", settings.ocr_result_queue)
         self.assertEqual("INFO", settings.log_level)
         self.assertEqual(10, settings.connect_retries)
         self.assertEqual(3.0, settings.connect_retry_delay)
@@ -108,6 +110,30 @@ class LoadSettingsTest(unittest.TestCase):
     def test_invalid_storage_endpoint_raises(self):
         with self.assertRaisesRegex(ConfigurationException, "STORAGE_ENDPOINT"):
             load_settings(dict(BASE_ENV, STORAGE_ENDPOINT="rustfs:9000"))
+
+    def test_elasticsearch_defaults(self):
+        settings = load_settings(BASE_ENV)
+        self.assertEqual("http://elasticsearch:9200", settings.elasticsearch_url)
+        self.assertEqual("elastic", settings.elasticsearch_user)
+        self.assertEqual("es-secret", settings.elasticsearch_password)
+        self.assertEqual("documents", settings.elasticsearch_index)
+
+    def test_elasticsearch_values_from_environment_override_defaults(self):
+        env = dict(BASE_ENV, ELASTICSEARCH_URL="http://localhost:9200/", ELASTICSEARCH_USER="indexer",
+                   ELASTICSEARCH_INDEX="docs")
+        settings = load_settings(env)
+        self.assertEqual("http://localhost:9200", settings.elasticsearch_url)
+        self.assertEqual("indexer", settings.elasticsearch_user)
+        self.assertEqual("docs", settings.elasticsearch_index)
+
+    def test_missing_elasticsearch_password_raises(self):
+        env = {k: v for k, v in BASE_ENV.items() if k != "ELASTICSEARCH_PASSWORD"}
+        with self.assertRaisesRegex(ConfigurationException, "ELASTICSEARCH_PASSWORD"):
+            load_settings(env)
+
+    def test_invalid_elasticsearch_url_raises(self):
+        with self.assertRaisesRegex(ConfigurationException, "ELASTICSEARCH_URL"):
+            load_settings(dict(BASE_ENV, ELASTICSEARCH_URL="elasticsearch:9200"))
 
 
 if __name__ == "__main__":

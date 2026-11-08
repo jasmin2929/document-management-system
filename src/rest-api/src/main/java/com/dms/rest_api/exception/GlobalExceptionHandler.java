@@ -13,16 +13,10 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Global advice controller for intercepting application exceptions and returning standardized HTTP JSON error responses.
- */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    /**
-     * Handles missing entities and responds with HTTP 404 NOT FOUND.
-     */
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleResourceNotFound(ResourceNotFoundException ex) {
         log.warn("Resource not found: {}", LogSanitizer.sanitize(ex.getMessage()));
@@ -34,9 +28,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
     }
 
-    /**
-     * Handles file I/O security or filesystem errors and responds with HTTP 500 INTERNAL SERVER ERROR.
-     */
     @ExceptionHandler(FileStorageException.class)
     public ResponseEntity<Map<String, Object>> handleFileStorage(FileStorageException ex) {
         // Server-side fault: log the full stack trace so the root cause can be investigated
@@ -49,9 +40,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
     }
 
-    /**
-     * Handles invalid client argument logic and responds with HTTP 400 BAD REQUEST.
-     */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
         log.warn("Bad request: {}", LogSanitizer.sanitize(ex.getMessage()));
@@ -63,9 +51,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
-    /**
-     * Handles database constraint violations (e.g., duplicate category name) and responds with HTTP 409 CONFLICT.
-     */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, Object>> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
         // The client only gets a generic message; the database detail is kept in the server log
@@ -78,9 +63,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
-    /**
-     * Handles Jakarta validation errors (e.g., @NotBlank) and responds with HTTP 400 BAD REQUEST containing field details.
-     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidationExceptions(MethodArgumentNotValidException ex) {
         Map<String, Object> body = new HashMap<>();
@@ -99,9 +81,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
-    /**
-     * Handles message broker or queue dispatch failures and responds with HTTP 500 INTERNAL SERVER ERROR.
-     */
     @ExceptionHandler(MessagingException.class)
     public ResponseEntity<Map<String, Object>> handleMessaging(MessagingException ex) {
         Map<String, Object> body = new HashMap<>();

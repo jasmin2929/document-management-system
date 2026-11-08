@@ -6,10 +6,6 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 
-/**
- * Data Transfer Object representing complete document details sent to clients.
- * Decouples API contract from internal database fields like storage path.
- */
 @Data
 @Builder
 public class DocumentResponseDto {

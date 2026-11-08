@@ -8,10 +8,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import java.util.Arrays;
 
-/**
- * Allows the Web UI (served from a different origin in local/dev setups)
- * to call this API directly, in addition to the nginx same-origin proxy used in production.
- */
+/** Lets the Web UI dev server (other origin) call the API; in Docker, nginx proxies same-origin. */
 @Slf4j
 @Configuration
 public class WebConfig implements WebMvcConfigurer {

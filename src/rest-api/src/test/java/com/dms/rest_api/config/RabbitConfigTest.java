@@ -1,5 +1,7 @@
 package com.dms.rest_api.config;
 
+import com.dms.rest_api.dto.OcrResultDto;
+import com.dms.rest_api.entity.Document;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -41,6 +43,15 @@ class RabbitConfigTest {
     }
 
     @Test
+    @DisplayName("ocrResultQueue() is durable so OCR results survive a broker restart")
+    void ocrResultQueue_IsDurableWithExpectedName() {
+        Queue queue = rabbitConfig.ocrResultQueue();
+
+        assertThat(queue.getName()).isEqualTo(RabbitConfig.OCR_RESULT_QUEUE);
+        assertThat(queue.isDurable()).isTrue();
+    }
+
+    @Test
     @DisplayName("jsonMessageConverter() serializes payloads as JSON and reads them back")
     void jsonMessageConverter_RoundTripsJson() {
         MessageConverter converter = rabbitConfig.jsonMessageConverter(new ObjectMapper());
@@ -50,6 +61,21 @@ class RabbitConfigTest {
         assertThat(message.getMessageProperties().getContentType()).isEqualTo(MessageProperties.CONTENT_TYPE_JSON);
         assertThat(new String(message.getBody(), StandardCharsets.UTF_8)).isEqualTo("{\"documentId\":7}");
         assertThat(converter.fromMessage(message)).isEqualTo(Map.of("documentId", 7));
+    }
+
+    @Test
+    @DisplayName("jsonMessageConverter() reads the OCR worker's result message (no Java type header) into OcrResultDto")
+    void jsonMessageConverter_ReadsWorkerResult() {
+        MessageConverter converter = rabbitConfig.jsonMessageConverter(new ObjectMapper());
+        MessageProperties properties = new MessageProperties();
+        properties.setContentType(MessageProperties.CONTENT_TYPE_JSON);
+        // @RabbitListener sets this from the method parameter type
+        properties.setInferredArgumentType(OcrResultDto.class);
+        byte[] body = "{\"documentId\": 5, \"status\": \"PROCESSED\", \"content\": \"Hello\"}".getBytes(StandardCharsets.UTF_8);
+
+        Object result = converter.fromMessage(new Message(body, properties));
+
+        assertThat(result).isEqualTo(new OcrResultDto(5L, Document.DocumentStatus.PROCESSED, "Hello"));
     }
 
     @Test

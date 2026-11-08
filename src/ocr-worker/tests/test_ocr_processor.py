@@ -1,7 +1,8 @@
 import unittest
 from unittest.mock import MagicMock
 
-from ocr_worker.exceptions import OcrProcessingException, StorageException
+from ocr_worker.exceptions import IndexingException, OcrProcessingException, StorageException
+from ocr_worker.indexing.indexing_worker import IndexingWorker
 from ocr_worker.model import OcrJob
 from ocr_worker.processing.ocr_engine import OcrEngine
 from ocr_worker.processing.ocr_processor import OcrProcessor
@@ -17,7 +18,8 @@ class OcrProcessorTest(unittest.TestCase):
         self.storage.download.return_value = PDF
         self.engine = MagicMock(spec=OcrEngine)
         self.engine.extract_text.return_value = "Hello World"
-        self.processor = OcrProcessor(self.storage, self.engine)
+        self.indexer = MagicMock(spec=IndexingWorker)
+        self.processor = OcrProcessor(self.storage, self.engine, self.indexer)
 
     def test_pdf_is_downloaded_and_ocr_result_returned(self):
         text = self.processor.process(JOB)
@@ -25,6 +27,21 @@ class OcrProcessorTest(unittest.TestCase):
         self.storage.download.assert_called_once_with("documents/a.pdf", "dms-documents")
         self.engine.extract_text.assert_called_once_with(PDF)
         self.assertEqual("Hello World", text)
+
+    def test_ocr_result_is_indexed(self):
+        self.processor.process(JOB)
+        self.indexer.index.assert_called_once_with(JOB, "Hello World")
+
+    def test_empty_text_is_indexed_too(self):
+        self.engine.extract_text.return_value = ""
+        with self.assertLogs("ocr_worker.processing.ocr_processor", level="WARNING"):
+            self.processor.process(JOB)
+        self.indexer.index.assert_called_once_with(JOB, "")
+
+    def test_indexing_error_is_passed_on(self):
+        self.indexer.index.side_effect = IndexingException("Elasticsearch not reachable")
+        with self.assertRaises(IndexingException):
+            self.processor.process(JOB)
 
     def test_result_is_logged_with_preview(self):
         with self.assertLogs("ocr_worker.processing.ocr_processor", level="INFO") as logs:
@@ -59,6 +76,7 @@ class OcrProcessorTest(unittest.TestCase):
         with self.assertRaises(StorageException):
             self.processor.process(JOB)
         self.engine.extract_text.assert_not_called()
+        self.indexer.index.assert_not_called()
 
     def test_ocr_error_is_passed_on(self):
         self.engine.extract_text.side_effect = OcrProcessingException("Content is not a PDF document")

@@ -14,10 +14,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.UUID;
 
-/**
- * Logs one line per HTTP request (method, path, status, duration) and tags every log line
- * written while handling that request with a short request ID, so related entries can be found together.
- */
+/** One log line per request; every log line of that request carries the same request ID. */
 @Slf4j
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)

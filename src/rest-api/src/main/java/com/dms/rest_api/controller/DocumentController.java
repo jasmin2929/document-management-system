@@ -13,9 +13,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
-/**
- * REST Controller exposing API endpoints for document creation, downloading, updating, and deletion.
- */
 @RestController
 @RequestMapping("/api/documents")
 public class DocumentController {

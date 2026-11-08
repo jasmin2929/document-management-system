@@ -4,17 +4,18 @@ import com.dms.rest_api.config.RabbitConfig;
 import com.dms.rest_api.dto.DocumentResponseDto;
 import com.dms.rest_api.dto.DocumentUpdateDto;
 import com.dms.rest_api.dto.OcrMessageDto;
+import com.dms.rest_api.dto.OcrResultDto;
 import com.dms.rest_api.entity.Category;
 import com.dms.rest_api.entity.Document;
 import com.dms.rest_api.exception.MessagingException;
 import com.dms.rest_api.exception.ResourceNotFoundException;
 import com.dms.rest_api.logging.LogSanitizer;
 import com.dms.rest_api.mapper.DocumentMapper;
-import com.dms.rest_api.repository.CategoryRepository;
 import com.dms.rest_api.repository.DocumentRepository;
 
 import lombok.extern.slf4j.Slf4j;
 
+import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
@@ -24,9 +25,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 import java.util.stream.Collectors;
 
-/**
- * Orchestrates document lifecycle, business domain rules, and metadata persistence.
- */
 @Slf4j
 @Service
 @Transactional
@@ -91,7 +89,6 @@ public class DocumentService {
 
             Document savedDocument = documentRepository.save(document);
 
-            // Send message to RabbitMQ for OCR processing
             try {
                 OcrMessageDto message = new OcrMessageDto(savedDocument.getId(), objectStorageService.getBucket(), objectKey);
                 rabbitTemplate.convertAndSend(RabbitConfig.OCR_QUEUE, message);
@@ -103,7 +100,7 @@ public class DocumentService {
 
             return documentMapper.toDto(savedDocument);
         } catch (Exception ex) {
-            // Rollback: remove the stored object if DB insertion, messaging or mapping fails
+            // Remove the stored object again if saving or messaging fails
             log.error("Saving metadata for '{}' failed, removing stored file again",
                     LogSanitizer.sanitize(rawFilename), ex);
             objectStorageService.deleteQuietly(objectKey);
@@ -143,6 +140,18 @@ public class DocumentService {
         objectStorageService.deleteQuietly(doc.getStoragePath());
         documentRepository.delete(doc);
         log.info("Document {} deleted", id);
+    }
+
+    @RabbitListener(queues = RabbitConfig.OCR_RESULT_QUEUE)
+    public void applyOcrResult(OcrResultDto result) {
+        documentRepository.findById(result.documentId()).ifPresentOrElse(doc -> {
+            doc.setStatus(result.status());
+            if (result.content() != null) {
+                doc.setContent(result.content());
+            }
+            documentRepository.save(doc);
+            log.info("OCR result for document {} applied: status={}", doc.getId(), result.status());
+        }, () -> log.warn("OCR result for unknown document {} ignored (deleted in the meantime?)", result.documentId()));
     }
 
 }

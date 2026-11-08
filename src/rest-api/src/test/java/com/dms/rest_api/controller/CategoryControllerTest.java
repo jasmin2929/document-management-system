@@ -2,7 +2,6 @@ package com.dms.rest_api.controller;
 
 import com.dms.rest_api.dto.CategoryRequestDto;
 import com.dms.rest_api.dto.CategoryResponseDto;
-import com.dms.rest_api.exception.ResourceNotFoundException;
 import com.dms.rest_api.service.CategoryService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;

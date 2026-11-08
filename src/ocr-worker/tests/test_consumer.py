@@ -1,10 +1,16 @@
+import json
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 from pika.exceptions import AMQPConnectionError
 
 from ocr_worker.config import Settings
-from ocr_worker.exceptions import BrokerConnectionException, OcrProcessingException, StorageException
+from ocr_worker.exceptions import (
+    BrokerConnectionException,
+    IndexingException,
+    OcrProcessingException,
+    StorageException,
+)
 from ocr_worker.messaging.consumer import OcrQueueConsumer
 from ocr_worker.model import OcrJob
 
@@ -28,7 +34,10 @@ class ConnectTest(unittest.TestCase):
         consumer.connect()
 
         channel = connection.channel.return_value
-        channel.queue_declare.assert_called_once_with(queue="ocr-queue", durable=True)
+        self.assertEqual(
+            [call(queue="ocr-queue", durable=True), call(queue="ocr-result-queue", durable=True)],
+            channel.queue_declare.call_args_list,
+        )
         channel.basic_qos.assert_called_once_with(prefetch_count=1)
 
     def test_connect_retries_until_broker_is_up(self):
@@ -54,8 +63,39 @@ class ConnectTest(unittest.TestCase):
 
 
 class OnMessageTest(unittest.TestCase):
+    def published_results(self):
+        """The result messages sent to the result queue, decoded from JSON."""
+        for c in self.channel.basic_publish.call_args_list:
+            self.assertEqual("ocr-result-queue", c.kwargs["routing_key"])
+            self.assertEqual("application/json", c.kwargs["properties"].content_type)
+        return [json.loads(c.kwargs["body"]) for c in self.channel.basic_publish.call_args_list]
+
+    def test_success_sends_processed_result_with_text(self):
+        self.processor.process.return_value = "Hello World"
+        self.consumer.on_message(self.channel, self.method, None, MESSAGE)
+        self.assertEqual([{"documentId": 5, "status": "PROCESSED", "content": "Hello World"}],
+                         self.published_results())
+
+    def test_failure_sends_failed_result(self):
+        self.processor.process.side_effect = OcrProcessingException("Content is not a PDF document")
+        with self.assertLogs("ocr_worker.messaging.consumer", level="ERROR"):
+            self.consumer.on_message(self.channel, self.method, None, MESSAGE)
+        self.assertEqual([{"documentId": 5, "status": "FAILED", "content": None}], self.published_results())
+
+    def test_unexpected_error_sends_failed_result(self):
+        self.processor.process.side_effect = RuntimeError("boom")
+        with self.assertLogs("ocr_worker.messaging.consumer", level="ERROR"):
+            self.consumer.on_message(self.channel, self.method, None, MESSAGE)
+        self.assertEqual("FAILED", self.published_results()[0]["status"])
+
+    def test_malformed_message_sends_no_result(self):
+        with self.assertLogs("ocr_worker.messaging.consumer", level="ERROR"):
+            self.consumer.on_message(self.channel, self.method, None, b"garbage")
+        self.channel.basic_publish.assert_not_called()
+
     def setUp(self):
         self.processor = MagicMock()
+        self.processor.process.return_value = "text"
         self.consumer = OcrQueueConsumer(make_settings(), self.processor, connection_factory=MagicMock())
         self.channel = MagicMock()
         self.method = MagicMock(delivery_tag=11)
@@ -97,6 +137,16 @@ class OnMessageTest(unittest.TestCase):
         self.channel.basic_nack.assert_called_once_with(delivery_tag=11, requeue=False)
         self.channel.basic_ack.assert_not_called()
         self.assertTrue(any("object storage" in l for l in logs.output))
+
+    def test_indexing_error_is_rejected_without_requeue(self):
+        self.processor.process.side_effect = IndexingException("Elasticsearch not reachable")
+
+        with self.assertLogs("ocr_worker.messaging.consumer", level="ERROR") as logs:
+            self.consumer.on_message(self.channel, self.method, None, MESSAGE)
+
+        self.channel.basic_nack.assert_called_once_with(delivery_tag=11, requeue=False)
+        self.channel.basic_ack.assert_not_called()
+        self.assertTrue(any("Indexing in Elasticsearch failed" in l for l in logs.output))
 
     def test_unexpected_error_does_not_crash_the_worker(self):
         self.processor.process.side_effect = RuntimeError("boom")
