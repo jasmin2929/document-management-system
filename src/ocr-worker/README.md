@@ -1,10 +1,20 @@
 # OCR Worker (Python)
 
-Consumes document IDs from the RabbitMQ queue `ocr-queue` (sent by the REST API on upload)
-and processes them. Runs as its own container, separate from the REST API.
+Consumes OCR jobs from the RabbitMQ queue `ocr-queue` (sent by the REST API on upload),
+downloads the original PDF from RustFS and runs the OCR (Ghostscript + Tesseract).
+Runs as its own container, separate from the REST API.
 
-Sprint 4: Ghostscript + Tesseract are installed in the image and wrapped by `OcrEngine`.
-Fetching the PDF from RustFS and calling the engine is task 4.
+## Flow
+
+```text
+REST API ──{"documentId":5,"bucket":"dms-documents","objectKey":"documents/<uuid>.pdf"}──▶ ocr-queue
+ocr-queue ──▶ OcrQueueConsumer ──OcrJob──▶ OcrProcessor
+OcrProcessor ──▶ ObjectStorageClient.download()  (RustFS, S3 API via boto3)
+             ──▶ OcrEngine.extract_text()         (Ghostscript → PNG → Tesseract)
+             ──▶ recognized text (logged now; handed to the indexing worker in task 6)
+```
+
+The message is acknowledged only after the OCR succeeded.
 
 ## Structure
 
@@ -12,6 +22,7 @@ Fetching the PDF from RustFS and calling the engine is task 4.
 |---|---|---|
 | Configuration | `ocr_worker/config.py` | `ConfigurationException` |
 | Messaging | `ocr_worker/messaging/consumer.py`, `message_parser.py` | `BrokerConnectionException`, `MessageFormatException` |
+| Storage | `ocr_worker/storage/object_storage.py` (RustFS via boto3) | `StorageException` |
 | Processing | `ocr_worker/processing/ocr_processor.py` | `OcrProcessingException` |
 | Processing (OCR) | `ocr_worker/processing/ocr_engine.py` (Ghostscript + Tesseract) | `OcrProcessingException` |
 
@@ -34,6 +45,12 @@ Failed messages are rejected without requeue, so a broken message cannot loop fo
 | `OCR_DPI` | `300` | resolution of the rendered pages |
 | `OCR_MAX_PAGES` | `50` | later pages are ignored |
 | `OCR_TIMEOUT_SECONDS` | `120` | per Ghostscript/Tesseract call |
+| `STORAGE_ENDPOINT` | `http://rustfs:9000` | RustFS S3 API |
+| `STORAGE_ACCESS_KEY` | – | required |
+| `STORAGE_SECRET_KEY` | – | required |
+| `STORAGE_BUCKET` | `dms-documents` | used if the message has no bucket |
+| `STORAGE_REGION` | `us-east-1` | ignored by RustFS, required by the S3 client |
+| `STORAGE_MAX_FILE_SIZE` | `52428800` | bytes; larger objects are refused |
 
 ## OCR engine (Ghostscript + Tesseract)
 
@@ -45,7 +62,27 @@ text = OcrEngine(language="deu+eng").extract_text(pdf_bytes)
 2. Tesseract recognizes the text of each image.
 
 At startup the worker logs the tool versions (`OCR tools ready: ...`) and exits with code 3 if a tool is missing.
-Try it by hand:
+It also checks the bucket (`Object storage ready: ...`); if RustFS is not ready yet, it only logs a warning.
+
+## Try the whole pipeline
+
+```powershell
+docker compose up -d --build
+# upload HelloWorld.pdf via http://localhost/ (or curl / Postman against the REST API), then:
+docker compose logs -f ocr-worker
+```
+
+Expected log lines:
+
+```text
+INFO  [ocr_worker.messaging.consumer] Received OCR job for document ID: 1
+INFO  [ocr_worker.processing.ocr_processor] Starting OCR processing for document ID: 1 (object 'documents/....pdf')
+INFO  [ocr_worker.storage.object_storage] Downloaded 'dms-documents/documents/....pdf' from object storage (12345 bytes)
+INFO  [ocr_worker.processing.ocr_engine] Rendered 1 page(s) with Ghostscript, starting Tesseract (deu+eng)
+INFO  [ocr_worker.processing.ocr_processor] OCR processing finished for document ID: 1, 11 characters recognized. Preview: "Hello World"
+```
+
+Only the OCR engine, by hand:
 
 ```powershell
 docker cp HelloWorld.pdf dms-ocr-worker:/tmp/HelloWorld.pdf

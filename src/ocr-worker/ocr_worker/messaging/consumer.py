@@ -1,6 +1,6 @@
 """Messaging layer: RabbitMQ consumer for the OCR queue.
 
-Receives the document IDs that the REST API publishes on upload, hands them to
+Receives the OCR jobs (document ID + location in RustFS) that the REST API publishes on upload, hands them to
 the :class:`OcrProcessor` and acknowledges or rejects each message depending on
 the outcome. Uses pika's ``BlockingConnection`` (one thread, one message at a time).
 """
@@ -17,15 +17,16 @@ from ocr_worker.exceptions import (
     BrokerConnectionException,
     MessageFormatException,
     OcrProcessingException,
+    StorageException,
 )
-from ocr_worker.messaging.message_parser import parse_document_id
+from ocr_worker.messaging.message_parser import parse_ocr_job
 from ocr_worker.processing.ocr_processor import OcrProcessor
 
 log = logging.getLogger(__name__)
 
 
 class OcrQueueConsumer:
-    """Consumes document IDs from the OCR queue and delegates them to the processor.
+    """Consumes OCR jobs from the OCR queue and delegates them to the processor.
 
     Typical lifecycle: ``connect()`` -> ``start()`` (blocks) -> ``stop()`` -> ``close()``.
     """
@@ -41,7 +42,7 @@ class OcrQueueConsumer:
 
         Args:
             settings: Validated worker configuration.
-            processor: Processing layer that handles each document ID.
+            processor: Processing layer that handles each OCR job.
             connection_factory: Creates the broker connection. Injected so unit
                 tests can pass a mock instead of connecting to a real RabbitMQ.
             sleep: Wait function between connection attempts. Injected so tests
@@ -122,19 +123,24 @@ class OcrQueueConsumer:
             channel: Channel the message was received on.
             method: Delivery metadata; provides the ``delivery_tag``.
             properties: AMQP message properties (unused).
-            body: Raw message payload, e.g. ``b"5"``.
+            body: Raw message payload, e.g.
+                ``b'{"documentId": 5, "bucket": "dms-documents", "objectKey": "documents/a.pdf"}'``.
         """
         delivery_tag = method.delivery_tag
         try:
-            document_id = parse_document_id(body)
-            log.info("Received document ID for OCR processing: %d", document_id)
-            self._processor.process(document_id)
+            job = parse_ocr_job(body)
+            log.info("Received OCR job for document ID: %d", job.document_id)
+            self._processor.process(job)
             # Ack only after successful processing, so a crash in between
             # leaves the message in the queue instead of losing it.
             channel.basic_ack(delivery_tag=delivery_tag)
         except MessageFormatException as ex:
             # Messaging layer: the payload itself is broken.
             log.error("Rejected malformed message: %s", ex)
+            channel.basic_nack(delivery_tag=delivery_tag, requeue=False)
+        except StorageException as ex:
+            # Storage layer: the PDF could not be downloaded from RustFS.
+            log.error("Could not fetch document from object storage: %s", ex)
             channel.basic_nack(delivery_tag=delivery_tag, requeue=False)
         except OcrProcessingException as ex:
             # Processing layer: valid message, but the document cannot be processed.

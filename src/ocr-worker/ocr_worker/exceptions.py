@@ -10,6 +10,7 @@ Hierarchy::
     ├── ConfigurationException      (configuration layer)
     ├── BrokerConnectionException   (messaging layer)
     ├── MessageFormatException      (messaging layer)
+    ├── StorageException            (storage layer)
     └── OcrProcessingException      (processing layer)
 """
 
@@ -38,6 +39,14 @@ class BrokerConnectionException(OcrWorkerException):
 class MessageFormatException(OcrWorkerException):
     """Messaging layer: a received message cannot be parsed.
 
+    Affects only that message: it is rejected and the worker keeps running.
+    """
+
+
+class StorageException(OcrWorkerException):
+    """Storage layer: the PDF cannot be downloaded from the object storage (RustFS).
+
+    E.g. the object or bucket does not exist, access is denied or RustFS is not reachable.
     Affects only that message: it is rejected and the worker keeps running.
     """
 

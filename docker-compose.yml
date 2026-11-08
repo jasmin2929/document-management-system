@@ -78,6 +78,8 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      rustfs:
+        condition: service_healthy
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
@@ -89,6 +91,11 @@ services:
       OCR_LANGUAGE: ${OCR_LANGUAGE:-deu+eng}
       OCR_DPI: 300
       OCR_MAX_PAGES: 50
+      # RustFS object storage: the worker downloads the uploaded PDFs from here
+      STORAGE_ENDPOINT: http://rustfs:9000
+      STORAGE_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-dms_storage_user}
+      STORAGE_SECRET_KEY: ${RUSTFS_SECRET_KEY:-dms_storage_password_change_me}
+      STORAGE_BUCKET: ${RUSTFS_BUCKET_NAME:-dms-documents}
 
   # ==========================================
   # Spring Boot REST API Service

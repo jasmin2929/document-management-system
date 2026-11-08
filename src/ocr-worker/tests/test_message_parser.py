@@ -1,43 +1,76 @@
 import unittest
 
 from ocr_worker.exceptions import MessageFormatException
-from ocr_worker.messaging.message_parser import parse_document_id
+from ocr_worker.messaging.message_parser import parse_ocr_job
+from ocr_worker.model import OcrJob
+
+# Exactly what the REST API's OcrMessageDto looks like as JSON
+REST_API_MESSAGE = b'{"documentId": 5, "bucket": "dms-documents", "objectKey": "documents/3f2a.pdf"}'
 
 
-class ParseDocumentIdTest(unittest.TestCase):
-    def test_plain_number_from_spring_rest_api(self):
-        self.assertEqual(5, parse_document_id(b"5"))
+class ParseOcrJobTest(unittest.TestCase):
+    def test_message_from_spring_rest_api(self):
+        self.assertEqual(
+            OcrJob(document_id=5, object_key="documents/3f2a.pdf", bucket="dms-documents"),
+            parse_ocr_job(REST_API_MESSAGE),
+        )
 
-    def test_object_with_document_id(self):
-        self.assertEqual(42, parse_document_id(b'{"documentId": 42}'))
+    def test_bucket_is_optional(self):
+        job = parse_ocr_job(b'{"documentId": 7, "objectKey": "documents/a.pdf"}')
+        self.assertIsNone(job.bucket)
+
+    def test_null_bucket_is_treated_as_missing(self):
+        job = parse_ocr_job(b'{"documentId": 7, "bucket": null, "objectKey": "documents/a.pdf"}')
+        self.assertIsNone(job.bucket)
 
     def test_invalid_json_raises(self):
         with self.assertRaisesRegex(MessageFormatException, "not valid JSON"):
-            parse_document_id(b"not json")
+            parse_ocr_job(b"not json")
 
     def test_invalid_utf8_raises(self):
         with self.assertRaises(MessageFormatException):
-            parse_document_id(b"\xff\xfe")
+            parse_ocr_job(b"\xff\xfe")
 
-    def test_object_without_document_id_raises(self):
+    def test_plain_number_from_sprint_3_raises(self):
+        # Without the object key the PDF cannot be found in RustFS
+        with self.assertRaisesRegex(MessageFormatException, "JSON object"):
+            parse_ocr_job(b"5")
+
+    def test_missing_document_id_raises(self):
         with self.assertRaisesRegex(MessageFormatException, "documentId"):
-            parse_document_id(b'{"id": 1}')
+            parse_ocr_job(b'{"objectKey": "documents/a.pdf"}')
 
-    def test_string_id_raises(self):
+    def test_string_document_id_raises(self):
         with self.assertRaisesRegex(MessageFormatException, "must be an integer"):
-            parse_document_id(b'"5"')
+            parse_ocr_job(b'{"documentId": "5", "objectKey": "documents/a.pdf"}')
 
-    def test_float_id_raises(self):
+    def test_boolean_document_id_raises(self):
         with self.assertRaises(MessageFormatException):
-            parse_document_id(b"5.5")
+            parse_ocr_job(b'{"documentId": true, "objectKey": "documents/a.pdf"}')
 
-    def test_boolean_id_raises(self):
+    def test_float_document_id_raises(self):
         with self.assertRaises(MessageFormatException):
-            parse_document_id(b"true")
+            parse_ocr_job(b'{"documentId": 5.5, "objectKey": "documents/a.pdf"}')
 
-    def test_null_raises(self):
-        with self.assertRaises(MessageFormatException):
-            parse_document_id(b"null")
+    def test_missing_object_key_raises(self):
+        with self.assertRaisesRegex(MessageFormatException, "objectKey"):
+            parse_ocr_job(b'{"documentId": 5}')
+
+    def test_blank_object_key_raises(self):
+        with self.assertRaisesRegex(MessageFormatException, "objectKey"):
+            parse_ocr_job(b'{"documentId": 5, "objectKey": "  "}')
+
+    def test_object_key_with_parent_directory_raises(self):
+        with self.assertRaisesRegex(MessageFormatException, "invalid path"):
+            parse_ocr_job(b'{"documentId": 5, "objectKey": "documents/../secret.pdf"}')
+
+    def test_absolute_object_key_raises(self):
+        with self.assertRaisesRegex(MessageFormatException, "invalid path"):
+            parse_ocr_job(b'{"documentId": 5, "objectKey": "/etc/passwd"}')
+
+    def test_empty_bucket_raises(self):
+        with self.assertRaisesRegex(MessageFormatException, "bucket"):
+            parse_ocr_job(b'{"documentId": 5, "bucket": "", "objectKey": "documents/a.pdf"}')
 
 
 if __name__ == "__main__":

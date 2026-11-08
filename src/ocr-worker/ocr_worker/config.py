@@ -33,6 +33,12 @@ class Settings:
         ocr_dpi: Resolution Ghostscript renders the PDF pages with; 300 is the usual value for OCR.
         ocr_max_pages: Only the first pages are processed, so a huge PDF cannot block the worker.
         ocr_timeout_seconds: Maximum runtime of one Ghostscript or Tesseract call.
+        storage_endpoint: URL of the S3-compatible object storage (RustFS), e.g. ``"http://rustfs:9000"``.
+        storage_access_key: S3 access key (user name) for RustFS.
+        storage_secret_key: S3 secret key (password) for RustFS.
+        storage_bucket: Bucket used when a message does not name one (same as the REST API's bucket).
+        storage_region: S3 region; RustFS ignores it, but the S3 client requires one.
+        storage_max_file_size: Larger PDFs are not downloaded (bytes).
     """
 
     rabbitmq_host: str
@@ -48,6 +54,12 @@ class Settings:
     ocr_dpi: int = 300
     ocr_max_pages: int = 50
     ocr_timeout_seconds: float = 120.0
+    storage_endpoint: str = "http://rustfs:9000"
+    storage_access_key: str = ""
+    storage_secret_key: str = ""
+    storage_bucket: str = "dms-documents"
+    storage_region: str = "us-east-1"
+    storage_max_file_size: int = 50 * 1024 * 1024
 
 
 def _get_int(env: Mapping[str, str], name: str, default: int, minimum: int) -> int:
@@ -158,7 +170,31 @@ def load_settings(env: Optional[Mapping[str, str]] = None) -> Settings:
         ocr_dpi=_get_int(env, "OCR_DPI", 300, minimum=72),
         ocr_max_pages=_get_int(env, "OCR_MAX_PAGES", 50, minimum=1),
         ocr_timeout_seconds=_get_float(env, "OCR_TIMEOUT_SECONDS", 120.0),
+        storage_endpoint=_get_endpoint(env),
+        storage_access_key=_get_required(env, "STORAGE_ACCESS_KEY"),
+        storage_secret_key=_get_required(env, "STORAGE_SECRET_KEY"),
+        storage_bucket=env.get("STORAGE_BUCKET", "dms-documents").strip() or "dms-documents",
+        storage_region=env.get("STORAGE_REGION", "us-east-1").strip() or "us-east-1",
+        storage_max_file_size=_get_int(env, "STORAGE_MAX_FILE_SIZE", 50 * 1024 * 1024, minimum=1),
     )
+
+
+def _get_endpoint(env: Mapping[str, str]) -> str:
+    """Read the URL of the object storage.
+
+    Args:
+        env: Source of the environment variables.
+
+    Returns:
+        The URL without a trailing slash.
+
+    Raises:
+        ConfigurationException: If the value is not an http(s) URL.
+    """
+    value = env.get("STORAGE_ENDPOINT", "http://rustfs:9000").strip().rstrip("/")
+    if not re.fullmatch(r"https?://[^\s/]+(:\d+)?", value):
+        raise ConfigurationException(f"STORAGE_ENDPOINT must look like 'http://rustfs:9000', got '{value}'")
+    return value
 
 
 def _get_ocr_language(env: Mapping[str, str]) -> str:

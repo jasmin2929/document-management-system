@@ -3,7 +3,10 @@ import unittest
 from ocr_worker.config import load_settings
 from ocr_worker.exceptions import ConfigurationException
 
-BASE_ENV = {"RABBITMQ_USER": "user", "RABBITMQ_PASSWORD": "secret"}
+BASE_ENV = {
+    "RABBITMQ_USER": "user", "RABBITMQ_PASSWORD": "secret",
+    "STORAGE_ACCESS_KEY": "storage-user", "STORAGE_SECRET_KEY": "storage-secret",
+}
 
 
 class LoadSettingsTest(unittest.TestCase):
@@ -29,11 +32,11 @@ class LoadSettingsTest(unittest.TestCase):
 
     def test_missing_user_raises(self):
         with self.assertRaisesRegex(ConfigurationException, "RABBITMQ_USER"):
-            load_settings({"RABBITMQ_PASSWORD": "secret"})
+            load_settings({k: v for k, v in BASE_ENV.items() if k != "RABBITMQ_USER"})
 
     def test_blank_password_raises(self):
         with self.assertRaisesRegex(ConfigurationException, "RABBITMQ_PASSWORD"):
-            load_settings({"RABBITMQ_USER": "user", "RABBITMQ_PASSWORD": "  "})
+            load_settings(dict(BASE_ENV, RABBITMQ_PASSWORD="  "))
 
     def test_non_numeric_port_raises(self):
         with self.assertRaisesRegex(ConfigurationException, "RABBITMQ_PORT must be an integer"):
@@ -78,6 +81,33 @@ class LoadSettingsTest(unittest.TestCase):
     def test_ocr_dpi_below_minimum_raises(self):
         with self.assertRaisesRegex(ConfigurationException, "OCR_DPI must be >= 72"):
             load_settings(dict(BASE_ENV, OCR_DPI="10"))
+
+    def test_storage_defaults(self):
+        settings = load_settings(BASE_ENV)
+        self.assertEqual("http://rustfs:9000", settings.storage_endpoint)
+        self.assertEqual("storage-user", settings.storage_access_key)
+        self.assertEqual("storage-secret", settings.storage_secret_key)
+        self.assertEqual("dms-documents", settings.storage_bucket)
+        self.assertEqual("us-east-1", settings.storage_region)
+        self.assertEqual(50 * 1024 * 1024, settings.storage_max_file_size)
+
+    def test_storage_values_from_environment_override_defaults(self):
+        env = dict(BASE_ENV, STORAGE_ENDPOINT="http://localhost:9000/", STORAGE_BUCKET="b",
+                   STORAGE_REGION="eu-central-1", STORAGE_MAX_FILE_SIZE="1000")
+        settings = load_settings(env)
+        self.assertEqual("http://localhost:9000", settings.storage_endpoint)  # trailing slash removed
+        self.assertEqual("b", settings.storage_bucket)
+        self.assertEqual("eu-central-1", settings.storage_region)
+        self.assertEqual(1000, settings.storage_max_file_size)
+
+    def test_missing_storage_secret_raises(self):
+        env = {k: v for k, v in BASE_ENV.items() if k != "STORAGE_SECRET_KEY"}
+        with self.assertRaisesRegex(ConfigurationException, "STORAGE_SECRET_KEY"):
+            load_settings(env)
+
+    def test_invalid_storage_endpoint_raises(self):
+        with self.assertRaisesRegex(ConfigurationException, "STORAGE_ENDPOINT"):
+            load_settings(dict(BASE_ENV, STORAGE_ENDPOINT="rustfs:9000"))
 
 
 if __name__ == "__main__":

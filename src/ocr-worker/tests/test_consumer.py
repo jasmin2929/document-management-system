@@ -4,8 +4,11 @@ from unittest.mock import MagicMock
 from pika.exceptions import AMQPConnectionError
 
 from ocr_worker.config import Settings
-from ocr_worker.exceptions import BrokerConnectionException, OcrProcessingException
+from ocr_worker.exceptions import BrokerConnectionException, OcrProcessingException, StorageException
 from ocr_worker.messaging.consumer import OcrQueueConsumer
+from ocr_worker.model import OcrJob
+
+MESSAGE = b'{"documentId": 5, "bucket": "dms-documents", "objectKey": "documents/a.pdf"}'
 
 
 def make_settings(retries=3):
@@ -59,12 +62,14 @@ class OnMessageTest(unittest.TestCase):
 
     def test_valid_message_is_processed_and_acked(self):
         with self.assertLogs("ocr_worker.messaging.consumer", level="INFO") as logs:
-            self.consumer.on_message(self.channel, self.method, None, b"5")
+            self.consumer.on_message(self.channel, self.method, None, MESSAGE)
 
-        self.processor.process.assert_called_once_with(5)
+        self.processor.process.assert_called_once_with(
+            OcrJob(document_id=5, object_key="documents/a.pdf", bucket="dms-documents")
+        )
         self.channel.basic_ack.assert_called_once_with(delivery_tag=11)
         self.channel.basic_nack.assert_not_called()
-        self.assertTrue(any("Received document ID for OCR processing: 5" in l for l in logs.output))
+        self.assertTrue(any("Received OCR job for document ID: 5" in l for l in logs.output))
 
     def test_malformed_message_is_rejected_without_requeue(self):
         with self.assertLogs("ocr_worker.messaging.consumer", level="ERROR"):
@@ -78,16 +83,26 @@ class OnMessageTest(unittest.TestCase):
         self.processor.process.side_effect = OcrProcessingException("Invalid document ID: -1")
 
         with self.assertLogs("ocr_worker.messaging.consumer", level="ERROR") as logs:
-            self.consumer.on_message(self.channel, self.method, None, b"-1")
+            self.consumer.on_message(self.channel, self.method, None, MESSAGE)
 
         self.channel.basic_nack.assert_called_once_with(delivery_tag=11, requeue=False)
         self.assertTrue(any("OCR processing failed" in l for l in logs.output))
+
+    def test_storage_error_is_rejected_without_requeue(self):
+        self.processor.process.side_effect = StorageException("'dms-documents/documents/a.pdf' does not exist")
+
+        with self.assertLogs("ocr_worker.messaging.consumer", level="ERROR") as logs:
+            self.consumer.on_message(self.channel, self.method, None, MESSAGE)
+
+        self.channel.basic_nack.assert_called_once_with(delivery_tag=11, requeue=False)
+        self.channel.basic_ack.assert_not_called()
+        self.assertTrue(any("object storage" in l for l in logs.output))
 
     def test_unexpected_error_does_not_crash_the_worker(self):
         self.processor.process.side_effect = RuntimeError("boom")
 
         with self.assertLogs("ocr_worker.messaging.consumer", level="ERROR"):
-            self.consumer.on_message(self.channel, self.method, None, b"3")
+            self.consumer.on_message(self.channel, self.method, None, MESSAGE)
 
         self.channel.basic_nack.assert_called_once_with(delivery_tag=11, requeue=False)
 

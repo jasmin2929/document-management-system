@@ -17,11 +17,17 @@ import signal
 import sys
 
 from ocr_worker.config import load_settings
-from ocr_worker.exceptions import BrokerConnectionException, ConfigurationException, OcrProcessingException
+from ocr_worker.exceptions import (
+    BrokerConnectionException,
+    ConfigurationException,
+    OcrProcessingException,
+    StorageException,
+)
 from ocr_worker.logging_config import configure_logging
 from ocr_worker.messaging.consumer import OcrQueueConsumer
 from ocr_worker.processing.ocr_engine import OcrEngine
 from ocr_worker.processing.ocr_processor import OcrProcessor
+from ocr_worker.storage.object_storage import ObjectStorageClient, create_s3_client
 
 log = logging.getLogger("ocr_worker")
 
@@ -58,9 +64,22 @@ def main() -> int:
         log.critical("OCR tools not available: %s", ex)
         return 3
 
+    storage = ObjectStorageClient(
+        create_s3_client(settings),
+        default_bucket=settings.storage_bucket,
+        max_file_size=settings.storage_max_file_size,
+    )
+    try:
+        storage.check_bucket()
+        log.info("Object storage ready: %s, bucket '%s'", settings.storage_endpoint, settings.storage_bucket)
+    except StorageException as ex:
+        # Not fatal: the REST API creates the bucket on its first start, and each
+        # message reports its own storage error. Log it, so the problem is visible.
+        log.warning("Object storage not ready yet, downloads will fail until it is: %s", ex)
+
     # Dependencies are created here and injected via the constructor,
     # which keeps the consumer independent and easy to unit-test.
-    consumer = OcrQueueConsumer(settings, OcrProcessor(engine))
+    consumer = OcrQueueConsumer(settings, OcrProcessor(storage, engine))
 
     def handle_shutdown(signum, _frame):
         """Stop consuming when the process receives a termination signal."""
