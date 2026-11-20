@@ -1,0 +1,17 @@
+[project]
+name = "genai-worker"
+version = "0.1.0"
+description = "Document Management System - GenAI (Gemini) summary worker"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["../worker-common"]
+addopts = "-v"
+
+[tool.coverage.run]
+source = ["genai_worker"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 70

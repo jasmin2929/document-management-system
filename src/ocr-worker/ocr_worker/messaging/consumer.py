@@ -65,6 +65,7 @@ class OcrQueueConsumer:
                 # Arguments must match the REST API's declaration, otherwise RabbitMQ answers PRECONDITION_FAILED.
                 self._channel.queue_declare(queue=self._settings.ocr_queue, durable=True)
                 self._channel.queue_declare(queue=self._settings.ocr_result_queue, durable=True)
+                self._channel.queue_declare(queue=self._settings.genai_queue, durable=True)
                 # OCR is slow: take one job at a time so other workers can pick up the rest.
                 self._channel.basic_qos(prefetch_count=1)
                 log.info(
@@ -91,6 +92,7 @@ class OcrQueueConsumer:
             log.info("Received OCR job for document ID: %d", job.document_id)
             text = self._processor.process(job)
             self._publish_result(channel, job.document_id, "PROCESSED", text)
+            self._publish_genai_job(channel, job.document_id, text)
             # Ack last: a crash before this point leaves the job in the queue.
             channel.basic_ack(delivery_tag=delivery_tag)
             return
@@ -111,19 +113,30 @@ class OcrQueueConsumer:
         channel.basic_nack(delivery_tag=delivery_tag, requeue=False)
 
     def _publish_result(self, channel, document_id: int, status: str, content: Optional[str]) -> None:
-        body = json.dumps({"documentId": document_id, "status": status, "content": content})
+        self._publish(channel, self._settings.ocr_result_queue,
+                      {"documentId": document_id, "status": status, "content": content})
+        log.info("Sent OCR result for document ID: %d (%s) to queue '%s'",
+                 document_id, status, self._settings.ocr_result_queue)
+
+    def _publish_genai_job(self, channel, document_id: int, text: str) -> None:
+        if not text.strip():
+            log.info("No text in document ID: %d, skipping GenAI summary", document_id)
+            return
+        self._publish(channel, self._settings.genai_queue, {"documentId": document_id, "text": text})
+        log.info("Sent GenAI job for document ID: %d to queue '%s'", document_id, self._settings.genai_queue)
+
+    @staticmethod
+    def _publish(channel, queue: str, message: dict) -> None:
         channel.basic_publish(
             exchange="",
-            routing_key=self._settings.ocr_result_queue,
-            body=body.encode("utf-8"),
+            routing_key=queue,
+            body=json.dumps(message).encode("utf-8"),
             properties=pika.BasicProperties(
                 # Spring's JSON converter only parses messages marked as JSON.
                 content_type="application/json",
                 delivery_mode=pika.DeliveryMode.Persistent,
             ),
         )
-        log.info("Sent OCR result for document ID: %d (%s) to queue '%s'",
-                 document_id, status, self._settings.ocr_result_queue)
 
     def start(self) -> None:
         """Consume messages until stop() is called."""

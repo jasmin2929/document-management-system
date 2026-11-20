@@ -22,6 +22,7 @@ class Settings:
     connect_retry_delay: float
     # Defaults let tests build Settings with only the RabbitMQ values.
     ocr_result_queue: str = "ocr-result-queue"
+    genai_queue: str = "genai-queue"
     ocr_language: str = "deu+eng"
     ocr_dpi: int = 300
     ocr_max_pages: int = 50
@@ -84,6 +85,7 @@ def load_settings(env: Optional[Mapping[str, str]] = None) -> Settings:
         rabbitmq_password=_get_required(env, "RABBITMQ_PASSWORD"),
         ocr_queue=env.get("OCR_QUEUE", "ocr-queue"),
         ocr_result_queue=env.get("OCR_RESULT_QUEUE", "ocr-result-queue"),
+        genai_queue=env.get("GENAI_QUEUE", "genai-queue"),
         log_level=log_level,
         connect_retries=_get_int(env, "RABBITMQ_CONNECT_RETRIES", 10, minimum=1),
         connect_retry_delay=_get_float(env, "RABBITMQ_CONNECT_RETRY_DELAY", 3.0),

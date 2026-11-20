@@ -5,7 +5,6 @@ Exit codes (non-zero lets Docker restart the worker):
 """
 
 import logging
-import signal
 import sys
 
 from ocr_worker.config import load_settings
@@ -22,6 +21,7 @@ from ocr_worker.messaging.consumer import OcrQueueConsumer
 from ocr_worker.processing.ocr_engine import OcrEngine
 from ocr_worker.processing.ocr_processor import OcrProcessor
 from ocr_worker.storage.object_storage import ObjectStorageClient, create_s3_client
+from worker_common.runner import run_consumer
 
 log = logging.getLogger("ocr_worker")
 
@@ -68,24 +68,7 @@ def main() -> int:
 
     consumer = OcrQueueConsumer(settings, OcrProcessor(storage, engine, indexer))
 
-    def handle_shutdown(signum, _frame):
-        log.info("Received signal %s, shutting down", signal.Signals(signum).name)
-        consumer.stop()
-
-    signal.signal(signal.SIGTERM, handle_shutdown)
-    signal.signal(signal.SIGINT, handle_shutdown)
-
-    try:
-        consumer.connect()
-        consumer.start()
-    except BrokerConnectionException as ex:
-        log.critical("%s", ex)
-        return 1
-    finally:
-        consumer.close()
-
-    log.info("OCR worker stopped")
-    return 0
+    return run_consumer(consumer, log, BrokerConnectionException)
 
 
 if __name__ == "__main__":

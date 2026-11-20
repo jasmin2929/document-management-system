@@ -39,14 +39,14 @@ class MainTest(unittest.TestCase):
         consumer_cls.return_value.connect.assert_not_called()
 
     @patch.dict("os.environ", dict(ENV, OCR_LANGUAGE="eng", OCR_DPI="200"), clear=True)
-    @patch("ocr_worker.__main__.signal.signal")
+    @patch("worker_common.runner.signal.signal")
     @patch("ocr_worker.__main__.OcrQueueConsumer")
     def test_ocr_engine_is_created_from_settings(self, _consumer_cls, _signal, engine_cls, _storage, _s3, *_es):
         entry.main()
         engine_cls.assert_called_once_with(language="eng", dpi=200, max_pages=50, timeout_seconds=120.0)
 
     @patch.dict("os.environ", ENV, clear=True)
-    @patch("ocr_worker.__main__.signal.signal")
+    @patch("worker_common.runner.signal.signal")
     @patch("ocr_worker.__main__.OcrQueueConsumer")
     def test_normal_run_returns_0_and_closes_connection(self, consumer_cls, _signal, _engine_cls, _storage, _s3, *_es):
         consumer = consumer_cls.return_value
@@ -56,7 +56,7 @@ class MainTest(unittest.TestCase):
         consumer.close.assert_called_once()
 
     @patch.dict("os.environ", ENV, clear=True)
-    @patch("ocr_worker.__main__.signal.signal")
+    @patch("worker_common.runner.signal.signal")
     @patch("ocr_worker.__main__.OcrQueueConsumer")
     def test_broker_unreachable_returns_1(self, consumer_cls, _signal, _engine_cls, _storage_cls, _s3_factory, *_es):
         consumer = consumer_cls.return_value
@@ -66,7 +66,7 @@ class MainTest(unittest.TestCase):
         consumer.close.assert_called_once()
 
     @patch.dict("os.environ", ENV, clear=True)
-    @patch("ocr_worker.__main__.signal.signal")
+    @patch("worker_common.runner.signal.signal")
     @patch("ocr_worker.__main__.OcrQueueConsumer")
     def test_storage_not_ready_is_logged_but_not_fatal(self, consumer_cls, _signal, _engine_cls, storage_cls, _s3, *_es):
         storage_cls.return_value.check_bucket.side_effect = StorageException("not reachable")
@@ -76,7 +76,7 @@ class MainTest(unittest.TestCase):
         consumer_cls.return_value.start.assert_called_once()
 
     @patch.dict("os.environ", ENV, clear=True)
-    @patch("ocr_worker.__main__.signal.signal")
+    @patch("worker_common.runner.signal.signal")
     @patch("ocr_worker.__main__.OcrQueueConsumer")
     def test_storage_client_is_created_from_settings(self, _consumer_cls, _signal, _engine_cls, storage_cls, s3, *_es):
         entry.main()
@@ -85,7 +85,7 @@ class MainTest(unittest.TestCase):
         )
 
     @patch.dict("os.environ", ENV, clear=True)
-    @patch("ocr_worker.__main__.signal.signal")
+    @patch("worker_common.runner.signal.signal")
     @patch("ocr_worker.__main__.OcrQueueConsumer")
     def test_shutdown_signal_stops_consumer(self, consumer_cls, signal_mock, _engine_cls, _storage, _s3, *_es):
         entry.main()
@@ -94,7 +94,7 @@ class MainTest(unittest.TestCase):
         consumer_cls.return_value.stop.assert_called_once()
 
     @patch.dict("os.environ", ENV, clear=True)
-    @patch("ocr_worker.__main__.signal.signal")
+    @patch("worker_common.runner.signal.signal")
     @patch("ocr_worker.__main__.OcrQueueConsumer")
     def test_indexing_worker_is_created_from_settings(self, _consumer_cls, _signal, _engine, _storage, _s3,
                                                       indexing_cls, es_factory):
@@ -102,7 +102,7 @@ class MainTest(unittest.TestCase):
         indexing_cls.assert_called_once_with(es_factory.return_value, "documents")
 
     @patch.dict("os.environ", ENV, clear=True)
-    @patch("ocr_worker.__main__.signal.signal")
+    @patch("worker_common.runner.signal.signal")
     @patch("ocr_worker.__main__.OcrQueueConsumer")
     def test_elasticsearch_not_ready_is_logged_but_not_fatal(self, consumer_cls, _signal, _engine, _storage, _s3,
                                                             indexing_cls, _es_factory):

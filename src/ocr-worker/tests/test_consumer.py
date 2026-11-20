@@ -35,7 +35,8 @@ class ConnectTest(unittest.TestCase):
 
         channel = connection.channel.return_value
         self.assertEqual(
-            [call(queue="ocr-queue", durable=True), call(queue="ocr-result-queue", durable=True)],
+            [call(queue="ocr-queue", durable=True), call(queue="ocr-result-queue", durable=True),
+             call(queue="genai-queue", durable=True)],
             channel.queue_declare.call_args_list,
         )
         channel.basic_qos.assert_called_once_with(prefetch_count=1)
@@ -65,10 +66,30 @@ class ConnectTest(unittest.TestCase):
 class OnMessageTest(unittest.TestCase):
     def published_results(self):
         """The result messages sent to the result queue, decoded from JSON."""
-        for c in self.channel.basic_publish.call_args_list:
-            self.assertEqual("ocr-result-queue", c.kwargs["routing_key"])
+        return self.published_to("ocr-result-queue")
+
+    def published_to(self, queue):
+        calls = [c for c in self.channel.basic_publish.call_args_list if c.kwargs["routing_key"] == queue]
+        for c in calls:
             self.assertEqual("application/json", c.kwargs["properties"].content_type)
-        return [json.loads(c.kwargs["body"]) for c in self.channel.basic_publish.call_args_list]
+        return [json.loads(c.kwargs["body"]) for c in calls]
+
+    def test_success_sends_text_to_genai_queue(self):
+        self.processor.process.return_value = "Hello World"
+        self.consumer.on_message(self.channel, self.method, None, MESSAGE)
+        self.assertEqual([{"documentId": 5, "text": "Hello World"}], self.published_to("genai-queue"))
+
+    def test_empty_text_sends_nothing_to_genai_queue(self):
+        self.processor.process.return_value = "  "
+        self.consumer.on_message(self.channel, self.method, None, MESSAGE)
+        self.assertEqual([], self.published_to("genai-queue"))
+        self.channel.basic_ack.assert_called_once_with(delivery_tag=11)
+
+    def test_failure_sends_nothing_to_genai_queue(self):
+        self.processor.process.side_effect = OcrProcessingException("not a PDF")
+        with self.assertLogs("ocr_worker.messaging.consumer", level="ERROR"):
+            self.consumer.on_message(self.channel, self.method, None, MESSAGE)
+        self.assertEqual([], self.published_to("genai-queue"))
 
     def test_success_sends_processed_result_with_text(self):
         self.processor.process.return_value = "Hello World"
