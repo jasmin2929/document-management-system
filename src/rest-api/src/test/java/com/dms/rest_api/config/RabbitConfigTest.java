@@ -1,5 +1,6 @@
 package com.dms.rest_api.config;
 
+import com.dms.rest_api.dto.GenAiResultDto;
 import com.dms.rest_api.dto.OcrResultDto;
 import com.dms.rest_api.entity.Document;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -49,6 +50,30 @@ class RabbitConfigTest {
 
         assertThat(queue.getName()).isEqualTo(RabbitConfig.OCR_RESULT_QUEUE);
         assertThat(queue.isDurable()).isTrue();
+    }
+
+    @Test
+    @DisplayName("genAiResultQueue() is durable like the queue the GenAI worker declares")
+    void genAiResultQueue_IsDurableWithExpectedName() {
+        Queue queue = rabbitConfig.genAiResultQueue();
+
+        assertThat(queue.getName()).isEqualTo("genai-result-queue");
+        assertThat(queue.isDurable()).isTrue();
+    }
+
+    @Test
+    @DisplayName("jsonMessageConverter() reads the GenAI worker's result message into GenAiResultDto")
+    void jsonMessageConverter_ReadsGenAiResult() {
+        MessageConverter converter = rabbitConfig.jsonMessageConverter(new ObjectMapper());
+        MessageProperties properties = new MessageProperties();
+        properties.setContentType(MessageProperties.CONTENT_TYPE_JSON);
+        properties.setInferredArgumentType(GenAiResultDto.class);
+        // exactly what genai_worker/consumer.py publishes
+        byte[] body = "{\"documentId\": 5, \"status\": \"SUMMARIZED\", \"summary\": \"A greeting.\"}".getBytes(StandardCharsets.UTF_8);
+
+        Object result = converter.fromMessage(new Message(body, properties));
+
+        assertThat(result).isEqualTo(new GenAiResultDto(5L, GenAiResultDto.SummaryStatus.SUMMARIZED, "A greeting."));
     }
 
     @Test

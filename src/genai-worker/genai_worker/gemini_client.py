@@ -52,9 +52,14 @@ class GeminiClient:
         )
         for attempt in range(1, self._max_retries + 1):
             reason = ""
+            started = time.monotonic()
             try:
                 with self._urlopen(request, timeout=self._timeout) as response:
-                    return json.loads(response.read().decode("utf-8"))
+                    payload = json.loads(response.read().decode("utf-8"))
+                # duration shows when the external API gets slow; the API key and text are never logged
+                log.info("Gemini API responded in %d ms (attempt %d/%d)",
+                         (time.monotonic() - started) * 1000, attempt, self._max_retries)
+                return payload
             except urllib.error.HTTPError as ex:
                 reason = f"HTTP {ex.code}: {_error_message(ex)}"
                 if ex.code not in _RETRYABLE_STATUS:

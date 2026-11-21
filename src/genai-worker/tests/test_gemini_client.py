@@ -41,6 +41,15 @@ class GeminiClientTest(unittest.TestCase):
         self.assertEqual("secret-key", request.get_header("X-goog-api-key"))
         self.assertIn("some document text", json.loads(request.data)["contents"][0]["parts"][0]["text"])
 
+    def test_successful_call_logs_duration_and_attempt_but_not_the_key(self):
+        client = self.make([ok_response(summary_payload())])
+
+        with self.assertLogs("genai_worker.gemini_client", level="INFO") as logs:
+            client.summarize("confidential document text")
+
+        self.assertTrue(any("Gemini API responded in" in line and "(attempt 1/3)" in line for line in logs.output))
+        self.assertFalse(any("secret-key" in line or "confidential" in line for line in logs.output))
+
     def test_long_text_is_truncated(self):
         client = self.make([ok_response(summary_payload())], max_chars=1000)
         with self.assertLogs("genai_worker.gemini_client", level="WARNING"):

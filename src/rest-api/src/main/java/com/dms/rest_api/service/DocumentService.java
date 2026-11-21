@@ -3,12 +3,14 @@ package com.dms.rest_api.service;
 import com.dms.rest_api.config.RabbitConfig;
 import com.dms.rest_api.dto.DocumentResponseDto;
 import com.dms.rest_api.dto.DocumentUpdateDto;
+import com.dms.rest_api.dto.GenAiResultDto;
 import com.dms.rest_api.dto.OcrMessageDto;
 import com.dms.rest_api.dto.OcrResultDto;
 import com.dms.rest_api.entity.Category;
 import com.dms.rest_api.entity.Document;
 import com.dms.rest_api.exception.MessagingException;
 import com.dms.rest_api.exception.ResourceNotFoundException;
+import com.dms.rest_api.logging.DocumentLogContext;
 import com.dms.rest_api.logging.LogSanitizer;
 import com.dms.rest_api.mapper.DocumentMapper;
 import com.dms.rest_api.repository.DocumentRepository;
@@ -32,6 +34,9 @@ import java.util.stream.Collectors;
 @Service
 @Transactional
 public class DocumentService {
+
+    // the worker asks for at most 5 sentences; this only guards against a runaway API response
+    static final int MAX_SUMMARY_LENGTH = 10_000;
 
     private final DocumentRepository documentRepository;
     private final CategoryService categoryService;    
@@ -167,14 +172,50 @@ public class DocumentService {
 
     @RabbitListener(queues = RabbitConfig.OCR_RESULT_QUEUE)
     public void applyOcrResult(OcrResultDto result) {
-        documentRepository.findById(result.documentId()).ifPresentOrElse(doc -> {
-            doc.setStatus(result.status());
-            if (result.content() != null) {
-                doc.setContent(result.content());
+        DocumentLogContext.run(result.documentId(), () ->
+            documentRepository.findById(result.documentId()).ifPresentOrElse(doc -> {
+                doc.setStatus(result.status());
+                if (result.content() != null) {
+                    doc.setContent(result.content());
+                }
+                documentRepository.save(doc);
+                log.info("OCR result for document {} applied: status={}", doc.getId(), result.status());
+            }, () -> log.warn("OCR result for unknown document {} ignored (deleted in the meantime?)", result.documentId())));
+    }
+
+    @RabbitListener(queues = RabbitConfig.GENAI_RESULT_QUEUE)
+    public void applyGenAiResult(GenAiResultDto result) {
+        if (result.documentId() == null || result.status() == null) {
+            log.warn("GenAI result without documentId or status ignored");
+            return;
+        }
+        DocumentLogContext.run(result.documentId(), () -> {
+            Document doc = documentRepository.findById(result.documentId()).orElse(null);
+            if (doc == null) {
+                log.warn("GenAI result for unknown document {} ignored (deleted in the meantime?)", result.documentId());
+                return;
             }
+            if (result.status() == GenAiResultDto.SummaryStatus.FAILED) {
+                // the document itself is fine (OCR worked), only the summary is missing
+                log.warn("Summary generation failed for document {}, no summary stored", doc.getId());
+                return;
+            }
+            if (result.summary() == null || result.summary().isBlank()) {
+                log.warn("GenAI result for document {} has an empty summary, ignored", doc.getId());
+                return;
+            }
+
+            String summary = result.summary().strip();
+            if (summary.length() > MAX_SUMMARY_LENGTH) {
+                log.warn("Summary for document {} has {} characters, truncated to {}",
+                        doc.getId(), summary.length(), MAX_SUMMARY_LENGTH);
+                summary = summary.substring(0, MAX_SUMMARY_LENGTH);
+            }
+            doc.setSummary(summary);
             documentRepository.save(doc);
-            log.info("OCR result for document {} applied: status={}", doc.getId(), result.status());
-        }, () -> log.warn("OCR result for unknown document {} ignored (deleted in the meantime?)", result.documentId()));
+            // only the length is logged: the summary contains document content, which does not belong in the logs
+            log.info("Summary for document {} stored ({} characters)", doc.getId(), summary.length());
+        });
     }
 
 }

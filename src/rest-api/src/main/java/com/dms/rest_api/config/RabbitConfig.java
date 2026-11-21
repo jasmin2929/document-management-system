@@ -19,6 +19,7 @@ public class RabbitConfig {
 
     public static final String OCR_QUEUE = "ocr-queue";
     public static final String OCR_RESULT_QUEUE = "ocr-result-queue";
+    public static final String GENAI_RESULT_QUEUE = "genai-result-queue";
 
     @Bean
     public Queue ocrQueue() {
@@ -30,6 +31,12 @@ public class RabbitConfig {
         return new Queue(OCR_RESULT_QUEUE, true);
     }
 
+    // must stay durable: the GenAI worker declares the same queue as durable
+    @Bean
+    public Queue genAiResultQueue() {
+        return new Queue(GENAI_RESULT_QUEUE, true);
+    }
+
     @Bean
     public MessageConverter jsonMessageConverter(ObjectMapper objectMapper) {
         return new Jackson2JsonMessageConverter(objectMapper);
@@ -39,7 +46,7 @@ public class RabbitConfig {
     public ApplicationRunner declareQueuesOnStartup(ObjectProvider<ConnectionFactory> connectionFactory) {
         return args -> connectionFactory.ifAvailable(factory -> {
             try (Connection ignored = factory.createConnection()) {
-                log.info("Connected to RabbitMQ, declared queue '{}'", OCR_QUEUE);
+                log.info("Connected to RabbitMQ, declared queues '{}', '{}', '{}'", OCR_QUEUE, OCR_RESULT_QUEUE, GENAI_RESULT_QUEUE);
             } catch (AmqpException e) {
                 log.warn("RabbitMQ not reachable at startup, queues will be declared on first use: {}", e.getMessage());
             }
