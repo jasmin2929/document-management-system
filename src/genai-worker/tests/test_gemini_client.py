@@ -1,3 +1,4 @@
+import http.client
 import io
 import json
 import unittest
@@ -70,6 +71,27 @@ class GeminiClientTest(unittest.TestCase):
             with self.assertRaisesRegex(GenAiException, "after 3 attempts"):
                 client.summarize("text")
         self.assertEqual(2, self.sleep.call_count)
+
+    def test_retries_when_connection_breaks_while_reading_the_response(self):
+        broken = MagicMock()
+        broken.read.side_effect = http.client.IncompleteRead(b"")
+        broken.__enter__.return_value = broken
+        client = self.make([broken, ok_response(summary_payload())])
+        with self.assertLogs("genai_worker.gemini_client", level="WARNING") as logs:
+            self.assertEqual("A short summary.", client.summarize("text"))
+        self.assertEqual(2, self.urlopen.call_count)
+        self.assertTrue(any("network error" in l for l in logs.output))
+
+    def test_timeout_is_retried(self):
+        client = self.make([TimeoutError("timed out"), ok_response(summary_payload())])
+        with self.assertLogs("genai_worker.gemini_client", level="WARNING"):
+            self.assertEqual("A short summary.", client.summarize("text"))
+
+    def test_server_error_is_retried_and_reported_after_last_attempt(self):
+        client = self.make([http_error(503, "overloaded") for _ in range(3)])
+        with self.assertLogs("genai_worker.gemini_client", level="WARNING"):
+            with self.assertRaisesRegex(GenAiException, "after 3 attempts \\(HTTP 503: overloaded\\)"):
+                client.summarize("text")
 
     def test_client_error_is_not_retried(self):
         client = self.make([http_error(400, "API key not valid")])

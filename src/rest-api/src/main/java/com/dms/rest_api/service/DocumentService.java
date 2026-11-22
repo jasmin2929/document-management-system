@@ -172,6 +172,11 @@ public class DocumentService {
 
     @RabbitListener(queues = RabbitConfig.OCR_RESULT_QUEUE)
     public void applyOcrResult(OcrResultDto result) {
+        // same guard as applyGenAiResult: findById(null) would throw, and a null status violates the NOT NULL column
+        if (result.documentId() == null || result.status() == null) {
+            log.warn("OCR result without documentId or status ignored");
+            return;
+        }
         DocumentLogContext.run(result.documentId(), () ->
             documentRepository.findById(result.documentId()).ifPresentOrElse(doc -> {
                 doc.setStatus(result.status());

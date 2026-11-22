@@ -11,7 +11,7 @@ import time
 from typing import Callable, Optional
 
 import pika
-from pika.exceptions import AMQPConnectionError
+from pika.exceptions import AMQPConnectionError, AMQPError
 
 from ocr_worker.config import Settings
 from ocr_worker.exceptions import (
@@ -94,8 +94,13 @@ class OcrQueueConsumer:
             self._publish_result(channel, job.document_id, "PROCESSED", text)
             self._publish_genai_job(channel, job.document_id, text)
             # Ack last: a crash before this point leaves the job in the queue.
-            channel.basic_ack(delivery_tag=delivery_tag)
+            self._ack(channel, delivery_tag)
             return
+        except BrokerConnectionException:
+            # The broker connection is broken: a FAILED result or a nack cannot be delivered either.
+            # Without this, a failed GenAI dispatch would be reported as a failed OCR (status FAILED).
+            # Propagate it: the worker stops, Docker restarts it and the unacked job is redelivered.
+            raise
         except MessageFormatException as ex:
             log.error("Rejected malformed message: %s", ex)
         except StorageException as ex:
@@ -110,7 +115,21 @@ class OcrQueueConsumer:
         # A malformed message has no document ID to report back.
         if job is not None:
             self._publish_result(channel, job.document_id, "FAILED", None)
-        channel.basic_nack(delivery_tag=delivery_tag, requeue=False)
+        self._reject(channel, delivery_tag)
+
+    @staticmethod
+    def _ack(channel, delivery_tag: int) -> None:
+        try:
+            channel.basic_ack(delivery_tag=delivery_tag)
+        except AMQPError as ex:
+            raise BrokerConnectionException(f"Could not acknowledge message {delivery_tag}: {ex!r}") from ex
+
+    @staticmethod
+    def _reject(channel, delivery_tag: int) -> None:
+        try:
+            channel.basic_nack(delivery_tag=delivery_tag, requeue=False)
+        except AMQPError as ex:
+            raise BrokerConnectionException(f"Could not reject message {delivery_tag}: {ex!r}") from ex
 
     def _publish_result(self, channel, document_id: int, status: str, content: Optional[str]) -> None:
         self._publish(channel, self._settings.ocr_result_queue,
@@ -127,16 +146,21 @@ class OcrQueueConsumer:
 
     @staticmethod
     def _publish(channel, queue: str, message: dict) -> None:
-        channel.basic_publish(
-            exchange="",
-            routing_key=queue,
-            body=json.dumps(message).encode("utf-8"),
-            properties=pika.BasicProperties(
-                # Spring's JSON converter only parses messages marked as JSON.
-                content_type="application/json",
-                delivery_mode=pika.DeliveryMode.Persistent,
-            ),
-        )
+        try:
+            channel.basic_publish(
+                exchange="",
+                routing_key=queue,
+                body=json.dumps(message).encode("utf-8"),
+                properties=pika.BasicProperties(
+                    # Spring's JSON converter only parses messages marked as JSON.
+                    content_type="application/json",
+                    delivery_mode=pika.DeliveryMode.Persistent,
+                ),
+            )
+        except AMQPError as ex:
+            raise BrokerConnectionException(
+                f"Could not publish to queue '{queue}' for document ID {message.get('documentId')}: {ex!r}"
+            ) from ex
 
     def start(self) -> None:
         """Consume messages until stop() is called."""
@@ -150,7 +174,8 @@ class OcrQueueConsumer:
         log.info("Waiting for messages. To exit press CTRL+C")
         try:
             self._channel.start_consuming()
-        except AMQPConnectionError as ex:
+        except AMQPError as ex:
+            # AMQPError also covers a channel closed by the broker, not only a lost connection
             raise BrokerConnectionException(f"Lost connection to RabbitMQ: {ex!r}") from ex
 
     def stop(self) -> None:
@@ -160,5 +185,9 @@ class OcrQueueConsumer:
 
     def close(self) -> None:
         if self._connection is not None and self._connection.is_open:
-            self._connection.close()
-            log.info("RabbitMQ connection closed")
+            try:
+                self._connection.close()
+                log.info("RabbitMQ connection closed")
+            except AMQPError as ex:
+                # close() runs in a finally block: raising here would hide the original error
+                log.warning("Could not close RabbitMQ connection cleanly: %s", ex)
