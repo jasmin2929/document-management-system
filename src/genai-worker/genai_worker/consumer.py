@@ -4,7 +4,7 @@ import time
 from typing import Callable, Optional
 
 import pika
-from pika.exceptions import AMQPConnectionError
+from pika.exceptions import AMQPConnectionError, AMQPError
 
 from genai_worker.config import Settings
 from genai_worker.exceptions import BrokerConnectionException, GenAiException, MessageFormatException
@@ -63,8 +63,12 @@ class GenAiQueueConsumer:
             summary = self._gemini.summarize(text)
             log.info("Summary created for document ID: %d (%d characters)", document_id, len(summary))
             self._publish_result(channel, document_id, "SUMMARIZED", summary)
-            channel.basic_ack(delivery_tag=delivery_tag)
+            self._ack(channel, delivery_tag)
             return
+        except BrokerConnectionException:
+            # The broker connection is broken, so neither a FAILED result nor a nack can be delivered.
+            # Propagate it: the worker stops, Docker restarts it and the unacked job is redelivered.
+            raise
         except MessageFormatException as ex:
             log.error("Rejected malformed message: %s", ex)
         except GenAiException as ex:
@@ -74,16 +78,37 @@ class GenAiQueueConsumer:
 
         if document_id is not None:
             self._publish_result(channel, document_id, "FAILED", None)
-        channel.basic_nack(delivery_tag=delivery_tag, requeue=False)
+        self._reject(channel, delivery_tag)
+
+    @staticmethod
+    def _ack(channel, delivery_tag: int) -> None:
+        try:
+            channel.basic_ack(delivery_tag=delivery_tag)
+        except AMQPError as ex:
+            raise BrokerConnectionException(f"Could not acknowledge message {delivery_tag}: {ex!r}") from ex
+
+    @staticmethod
+    def _reject(channel, delivery_tag: int) -> None:
+        # requeue=False: a job that failed once would fail again and loop forever
+        try:
+            channel.basic_nack(delivery_tag=delivery_tag, requeue=False)
+        except AMQPError as ex:
+            raise BrokerConnectionException(f"Could not reject message {delivery_tag}: {ex!r}") from ex
 
     def _publish_result(self, channel, document_id: int, status: str, summary: Optional[str]) -> None:
         body = json.dumps({"documentId": document_id, "status": status, "summary": summary})
-        channel.basic_publish(
-            exchange="",
-            routing_key=self._settings.genai_result_queue,
-            body=body.encode("utf-8"),
-            properties=pika.BasicProperties(content_type="application/json", delivery_mode=pika.DeliveryMode.Persistent),
-        )
+        try:
+            channel.basic_publish(
+                exchange="",
+                routing_key=self._settings.genai_result_queue,
+                body=body.encode("utf-8"),
+                properties=pika.BasicProperties(content_type="application/json", delivery_mode=pika.DeliveryMode.Persistent),
+            )
+        except AMQPError as ex:
+            # pika errors are translated so callers only depend on our own exception types
+            raise BrokerConnectionException(
+                f"Could not publish GenAI result for document ID {document_id}: {ex!r}"
+            ) from ex
         log.info("Sent GenAI result for document ID: %d (%s) to queue '%s'",
                  document_id, status, self._settings.genai_result_queue)
 
@@ -94,7 +119,8 @@ class GenAiQueueConsumer:
         log.info("Waiting for messages. To exit press CTRL+C")
         try:
             self._channel.start_consuming()
-        except AMQPConnectionError as ex:
+        except AMQPError as ex:
+            # AMQPError also covers a channel closed by the broker (e.g. queue deleted), not only a lost connection
             raise BrokerConnectionException(f"Lost connection to RabbitMQ: {ex!r}") from ex
 
     def stop(self) -> None:
@@ -103,5 +129,9 @@ class GenAiQueueConsumer:
 
     def close(self) -> None:
         if self._connection is not None and self._connection.is_open:
-            self._connection.close()
-            log.info("RabbitMQ connection closed")
+            try:
+                self._connection.close()
+                log.info("RabbitMQ connection closed")
+            except AMQPError as ex:
+                # close() runs in a finally block: raising here would hide the original error
+                log.warning("Could not close RabbitMQ connection cleanly: %s", ex)

@@ -1,3 +1,4 @@
+import http.client
 import json
 import logging
 import time
@@ -64,7 +65,9 @@ class GeminiClient:
                 reason = f"HTTP {ex.code}: {_error_message(ex)}"
                 if ex.code not in _RETRYABLE_STATUS:
                     raise GenAiException(f"Gemini API rejected the request ({reason})") from ex
-            except (urllib.error.URLError, TimeoutError, OSError) as ex:
+            except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException) as ex:
+                # HTTPException covers a connection that breaks while the response is read (IncompleteRead);
+                # it is no OSError, so without it a transient error would skip the retry
                 reason = f"network error: {ex}"
             except (json.JSONDecodeError, UnicodeDecodeError) as ex:
                 raise GenAiException(f"Gemini API returned invalid JSON: {ex}") from ex

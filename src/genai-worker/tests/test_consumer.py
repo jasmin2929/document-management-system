@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest.mock import MagicMock, call
 
-from pika.exceptions import AMQPConnectionError
+from pika.exceptions import AMQPConnectionError, ChannelClosed, ChannelWrongStateError, StreamLostError
 
 from genai_worker.config import Settings
 from genai_worker.consumer import GenAiQueueConsumer
@@ -44,6 +44,23 @@ class ConnectTest(unittest.TestCase):
             with self.assertRaises(BrokerConnectionException):
                 consumer.start()
         connection.channel.return_value.basic_consume.assert_called_once()
+
+    def test_start_translates_channel_closed_by_broker(self):
+        connection = MagicMock()
+        consumer = GenAiQueueConsumer(make_settings(), MagicMock(), MagicMock(return_value=connection), MagicMock())
+        connection.channel.return_value.start_consuming.side_effect = ChannelClosed(404, "NOT_FOUND")
+        with self.assertLogs("genai_worker.consumer", level="INFO"):
+            with self.assertRaisesRegex(BrokerConnectionException, "Lost connection"):
+                consumer.start()
+
+    def test_close_does_not_raise_when_connection_is_already_broken(self):
+        connection = MagicMock(is_open=True)
+        connection.close.side_effect = StreamLostError("gone")
+        consumer = GenAiQueueConsumer(make_settings(), MagicMock(), MagicMock(return_value=connection), MagicMock())
+        consumer.connect()
+        with self.assertLogs("genai_worker.consumer", level="WARNING") as logs:
+            consumer.close()
+        self.assertTrue(any("Could not close RabbitMQ connection" in l for l in logs.output))
 
     def test_stop_and_close(self):
         connection = MagicMock(is_open=True)
@@ -99,3 +116,27 @@ class OnMessageTest(unittest.TestCase):
         self.gemini.summarize.assert_not_called()
         self.channel.basic_publish.assert_not_called()
         self.channel.basic_nack.assert_called_once_with(delivery_tag=7, requeue=False)
+
+    def test_broker_failure_while_publishing_propagates_without_failed_result(self):
+        # a broken channel must not be treated like a GenAI error: no second publish, no nack, worker restarts
+        self.channel.basic_publish.side_effect = ChannelWrongStateError("Channel is closed.")
+        with self.assertLogs("genai_worker.consumer", level="INFO"):
+            with self.assertRaisesRegex(BrokerConnectionException, "Could not publish GenAI result for document ID 5"):
+                self.consumer.on_message(self.channel, self.method, None, MESSAGE)
+        self.assertEqual(1, self.channel.basic_publish.call_count)
+        self.channel.basic_ack.assert_not_called()
+        self.channel.basic_nack.assert_not_called()
+
+    def test_broker_failure_while_acking_propagates(self):
+        self.channel.basic_ack.side_effect = ChannelWrongStateError("Channel is closed.")
+        with self.assertLogs("genai_worker.consumer", level="INFO"):
+            with self.assertRaisesRegex(BrokerConnectionException, "Could not acknowledge message 7"):
+                self.consumer.on_message(self.channel, self.method, None, MESSAGE)
+        # only the SUMMARIZED result, no FAILED afterwards
+        self.assertEqual([{"documentId": 5, "status": "SUMMARIZED", "summary": "A summary"}], self.published())
+
+    def test_broker_failure_while_rejecting_propagates(self):
+        self.channel.basic_nack.side_effect = ChannelWrongStateError("Channel is closed.")
+        with self.assertLogs("genai_worker.consumer", level="ERROR"):
+            with self.assertRaisesRegex(BrokerConnectionException, "Could not reject message 7"):
+                self.consumer.on_message(self.channel, self.method, None, b"garbage")

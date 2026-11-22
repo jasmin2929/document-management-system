@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest.mock import MagicMock, call
 
-from pika.exceptions import AMQPConnectionError
+from pika.exceptions import AMQPConnectionError, ChannelClosed, ChannelWrongStateError, StreamLostError
 
 from ocr_worker.config import Settings
 from ocr_worker.exceptions import (
@@ -219,3 +219,55 @@ class StartStopTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BrokerFailureTest(unittest.TestCase):
+    """A broken broker connection must stop the worker instead of being reported as a failed OCR job."""
+
+    def setUp(self):
+        self.processor = MagicMock()
+        self.processor.process.return_value = "Hello World"
+        self.consumer = OcrQueueConsumer(make_settings(), self.processor, connection_factory=MagicMock())
+        self.channel = MagicMock()
+        self.method = MagicMock(delivery_tag=11)
+
+    def test_genai_dispatch_failure_does_not_report_ocr_as_failed(self):
+        # 1st publish (PROCESSED result) works, 2nd publish (GenAI job) fails because the channel died
+        self.channel.basic_publish.side_effect = [None, ChannelWrongStateError("Channel is closed.")]
+        with self.assertLogs("ocr_worker.messaging.consumer", level="INFO"):
+            with self.assertRaisesRegex(BrokerConnectionException, "queue 'genai-queue' for document ID 5"):
+                self.consumer.on_message(self.channel, self.method, None, MESSAGE)
+        statuses = [json.loads(c.kwargs["body"]).get("status") for c in self.channel.basic_publish.call_args_list]
+        self.assertNotIn("FAILED", statuses)
+        self.channel.basic_ack.assert_not_called()
+        self.channel.basic_nack.assert_not_called()
+
+    def test_ack_failure_propagates(self):
+        self.channel.basic_ack.side_effect = ChannelWrongStateError("Channel is closed.")
+        with self.assertLogs("ocr_worker.messaging.consumer", level="INFO"):
+            with self.assertRaisesRegex(BrokerConnectionException, "Could not acknowledge message 11"):
+                self.consumer.on_message(self.channel, self.method, None, MESSAGE)
+
+    def test_reject_failure_propagates(self):
+        self.channel.basic_nack.side_effect = ChannelWrongStateError("Channel is closed.")
+        with self.assertLogs("ocr_worker.messaging.consumer", level="ERROR"):
+            with self.assertRaisesRegex(BrokerConnectionException, "Could not reject message 11"):
+                self.consumer.on_message(self.channel, self.method, None, b"garbage")
+
+    def test_start_translates_channel_closed_by_broker(self):
+        connection = MagicMock()
+        consumer = OcrQueueConsumer(make_settings(), self.processor, connection_factory=MagicMock(return_value=connection),
+                                    sleep=MagicMock())
+        connection.channel.return_value.start_consuming.side_effect = ChannelClosed(404, "NOT_FOUND")
+        with self.assertLogs("ocr_worker.messaging.consumer", level="INFO"):
+            with self.assertRaises(BrokerConnectionException):
+                consumer.start()
+
+    def test_close_does_not_raise_when_connection_is_already_broken(self):
+        connection = MagicMock(is_open=True)
+        connection.close.side_effect = StreamLostError("gone")
+        consumer = OcrQueueConsumer(make_settings(), self.processor, connection_factory=MagicMock(return_value=connection),
+                                    sleep=MagicMock())
+        consumer.connect()
+        with self.assertLogs("ocr_worker.messaging.consumer", level="WARNING"):
+            consumer.close()
