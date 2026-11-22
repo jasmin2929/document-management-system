@@ -2,6 +2,8 @@ package com.dms.rest_api.service;
 
 import com.dms.rest_api.dto.DocumentResponseDto;
 import com.dms.rest_api.dto.DocumentUpdateDto;
+import com.dms.rest_api.dto.GenAiResultDto;
+import com.dms.rest_api.dto.GenAiResultDto.SummaryStatus;
 import com.dms.rest_api.dto.OcrMessageDto;
 import com.dms.rest_api.dto.OcrResultDto;
 import com.dms.rest_api.entity.Category;
@@ -334,6 +336,101 @@ class DocumentServiceTest {
             documentService.applyOcrResult(new OcrResultDto(99L, Document.DocumentStatus.PROCESSED, "text"));
 
             verify(documentRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("result without document ID is ignored without touching the database")
+        void missingDocumentId_IsIgnored() {
+            documentService.applyOcrResult(new OcrResultDto(null, Document.DocumentStatus.PROCESSED, "text"));
+
+            verifyNoInteractions(documentRepository);
+        }
+
+        @Test
+        @DisplayName("result without status is ignored (status column is NOT NULL)")
+        void missingStatus_IsIgnored() {
+            documentService.applyOcrResult(new OcrResultDto(1L, null, "text"));
+
+            verifyNoInteractions(documentRepository);
+        }
+    }
+
+    @Nested
+    @DisplayName("applyGenAiResult()")
+    class GenAiResultTests {
+
+        @Test
+        @DisplayName("SUMMARIZED result stores the summary in the database")
+        void summarizedResult_StoresSummary() {
+            given(documentRepository.findById(1L)).willReturn(Optional.of(sampleDocument));
+
+            documentService.applyGenAiResult(new GenAiResultDto(1L, SummaryStatus.SUMMARIZED, "  An invoice from 2026.\n"));
+
+            assertThat(sampleDocument.getSummary()).isEqualTo("An invoice from 2026.");
+            verify(documentRepository).save(sampleDocument);
+        }
+
+        @Test
+        @DisplayName("SUMMARIZED result does not change the OCR status or text")
+        void summarizedResult_KeepsStatusAndContent() {
+            sampleDocument.setContent("Hello World");
+            given(documentRepository.findById(1L)).willReturn(Optional.of(sampleDocument));
+
+            documentService.applyGenAiResult(new GenAiResultDto(1L, SummaryStatus.SUMMARIZED, "Greeting."));
+
+            assertThat(sampleDocument.getStatus()).isEqualTo(Document.DocumentStatus.PROCESSED);
+            assertThat(sampleDocument.getContent()).isEqualTo("Hello World");
+        }
+
+        @Test
+        @DisplayName("FAILED result keeps the existing summary and saves nothing")
+        void failedResult_KeepsExistingSummary() {
+            sampleDocument.setSummary("old summary");
+            given(documentRepository.findById(1L)).willReturn(Optional.of(sampleDocument));
+
+            documentService.applyGenAiResult(new GenAiResultDto(1L, SummaryStatus.FAILED, null));
+
+            assertThat(sampleDocument.getSummary()).isEqualTo("old summary");
+            verify(documentRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("SUMMARIZED result with an empty summary is ignored")
+        void emptySummary_IsIgnored() {
+            given(documentRepository.findById(1L)).willReturn(Optional.of(sampleDocument));
+
+            documentService.applyGenAiResult(new GenAiResultDto(1L, SummaryStatus.SUMMARIZED, "   "));
+
+            verify(documentRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("an overly long summary is truncated before it is stored")
+        void longSummary_IsTruncated() {
+            given(documentRepository.findById(1L)).willReturn(Optional.of(sampleDocument));
+
+            documentService.applyGenAiResult(new GenAiResultDto(1L, SummaryStatus.SUMMARIZED,
+                    "a".repeat(DocumentService.MAX_SUMMARY_LENGTH + 100)));
+
+            assertThat(sampleDocument.getSummary()).hasSize(DocumentService.MAX_SUMMARY_LENGTH);
+        }
+
+        @Test
+        @DisplayName("result for a deleted document is ignored without error")
+        void unknownDocument_IsIgnored() {
+            given(documentRepository.findById(99L)).willReturn(Optional.empty());
+
+            documentService.applyGenAiResult(new GenAiResultDto(99L, SummaryStatus.SUMMARIZED, "text"));
+
+            verify(documentRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("result without document ID is ignored without touching the database")
+        void missingDocumentId_IsIgnored() {
+            documentService.applyGenAiResult(new GenAiResultDto(null, SummaryStatus.SUMMARIZED, "text"));
+
+            verifyNoInteractions(documentRepository);
         }
     }
 

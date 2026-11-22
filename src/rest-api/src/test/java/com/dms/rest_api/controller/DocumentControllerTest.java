@@ -146,6 +146,50 @@ class DocumentControllerTest {
     }
 
     @Test
+    @DisplayName("GET /api/documents/{id} - Returns 400 (not 500) for a non-numeric ID")
+    void getDocumentById_InvalidId_Returns400() throws Exception {
+        mockMvc.perform(get("/api/documents/abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Parameter 'id' has an invalid value."));
+    }
+
+    @Test
+    @DisplayName("PUT /api/documents/{id} - Returns 400 (not 500) for malformed JSON")
+    void updateDocument_MalformedJson_Returns400() throws Exception {
+        mockMvc.perform(put("/api/documents/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\": "))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("The request body is missing or not valid JSON."));
+    }
+
+    @Test
+    @DisplayName("PUT /api/documents/{id} - Returns 400 for an unknown status value")
+    void updateDocument_UnknownStatus_Returns400() throws Exception {
+        mockMvc.perform(put("/api/documents/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\": \"DONE\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("PATCH /api/documents/{id} - unsupported method keeps 405")
+    void patchDocument_Returns405() throws Exception {
+        mockMvc.perform(patch("/api/documents/1"))
+                .andExpect(status().isMethodNotAllowed());
+    }
+
+    @Test
+    @DisplayName("GET /api/documents/{id} - unexpected error becomes a generic 500")
+    void getDocumentById_UnexpectedError_Returns500() throws Exception {
+        given(documentService.findById(1L)).willThrow(new IllegalStateException("internal detail"));
+
+        mockMvc.perform(get("/api/documents/1"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.message").value("An unexpected error occurred. Please try again later."));
+    }
+
+    @Test
     @DisplayName("POST /api/documents/upload - Returns 400 when file is missing")
     void uploadDocument_MissingFile_ReturnsBadRequest() throws Exception {
         mockMvc.perform(multipart("/api/documents/upload"))

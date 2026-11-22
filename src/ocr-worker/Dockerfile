@@ -7,16 +7,18 @@ WORKDIR /app
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ghostscript tesseract-ocr tesseract-ocr-deu \
  && rm -rf /var/lib/apt/lists/*
-COPY requirements.txt .
+COPY ocr-worker/requirements.txt .
 RUN pip install -r requirements.txt
-COPY ocr_worker ./ocr_worker
+COPY ocr-worker/ocr_worker ./ocr_worker
+COPY worker-common/worker_common ./worker_common
 
 # Build fails if a test fails or coverage < 70%
 FROM base AS test
-COPY requirements-dev.txt pyproject.toml ./
+COPY ocr-worker/requirements-dev.txt ocr-worker/pyproject.toml ./
 RUN pip install -r requirements-dev.txt
-COPY tests ./tests
-RUN pytest --cov=ocr_worker --cov-report=term-missing && touch /tmp/tests-passed
+COPY ocr-worker/tests ./tests
+COPY worker-common/tests ./worker-common-tests
+RUN pytest --cov=ocr_worker --cov-report=term-missing tests worker-common-tests && touch /tmp/tests-passed
 
 FROM base AS runtime
 # Depending on the test stage makes the tests run on every build

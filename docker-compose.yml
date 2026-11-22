@@ -111,8 +111,8 @@ services:
 
   ocr-worker:
     build:
-      context: ./src/ocr-worker
-      dockerfile: Dockerfile
+      context: ./src
+      dockerfile: ocr-worker/Dockerfile
     container_name: dms-ocr-worker
     restart: always
     depends_on:
@@ -141,6 +141,27 @@ services:
       ELASTICSEARCH_USER: elastic
       ELASTICSEARCH_PASSWORD: ${ELASTIC_PASSWORD:-elastic_password_change_me}
       ELASTICSEARCH_INDEX: documents
+      GENAI_QUEUE: genai-queue
+
+  genai-worker:
+    build:
+      context: ./src
+      dockerfile: genai-worker/Dockerfile
+    container_name: dms-genai-worker
+    restart: always
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_DEFAULT_USER:-dms_user}
+      RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-dms_password_change_me}
+      GENAI_QUEUE: genai-queue
+      GENAI_RESULT_QUEUE: genai-result-queue
+      LOG_LEVEL: INFO
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?Set GEMINI_API_KEY in .env (see .env.example)}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
 
   rest-api:
     build:

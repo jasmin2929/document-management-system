@@ -1,8 +1,11 @@
 server:
   port: ${PORT:8081}
   error:
-    include-message: always
-    include-binding-errors: always
+    # GlobalExceptionHandler builds all API error responses; Spring's fallback error page
+    # (e.g. errors thrown in filters) must not expose internal exception messages
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
 
 spring:
   application:
@@ -33,6 +36,14 @@ spring:
       simple:
         # drop a failing result message instead of redelivering it forever
         default-requeue-rejected: false
+        # transient failures (e.g. database briefly unavailable) are retried in-process before the
+        # message is dropped: 3 attempts, waiting 1s and 2s in between; the summary is not lost on a short outage
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1s
+          multiplier: 2
+          max-interval: 10s
 
   jpa:
     hibernate:
