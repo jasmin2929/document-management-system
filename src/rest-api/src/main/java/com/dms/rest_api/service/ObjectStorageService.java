@@ -25,7 +25,6 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Locale;
-import java.util.Objects;
 import java.util.UUID;
 
 @Slf4j
@@ -107,10 +106,16 @@ public class ObjectStorageService {
     }
 
     public String sanitizeFilename(String originalFilename) {
-        String rawFilename = StringUtils.cleanPath(Objects.requireNonNull(originalFilename));
+        // A missing name is a client error (400)
+        if (originalFilename == null || originalFilename.isBlank()) {
+            log.warn("Rejected upload without a filename");
+            throw new IllegalArgumentException("The uploaded file has no filename.");
+        }
+        String rawFilename = StringUtils.cleanPath(originalFilename);
         if (rawFilename.contains("..")) {
             log.warn("Rejected filename with path traversal sequence: '{}'", LogSanitizer.sanitize(rawFilename));
-            throw new FileStorageException("Filename contains invalid path sequence: " + rawFilename);
+            // client error (400 via GlobalExceptionHandler)
+            throw new IllegalArgumentException("Filename contains invalid path sequence: " + rawFilename);
         }
         return rawFilename;
     }

@@ -101,10 +101,18 @@ class ObjectStorageServiceTest {
     }
 
     @Test
-    @DisplayName("sanitizeFilename() throws FileStorageException on Path Traversal")
+    @DisplayName("sanitizeFilename() rejects a missing filename as a client error")
+    void sanitizeFilename_Null_ThrowsIllegalArgument() {
+        assertThatThrownBy(() -> objectStorageService.sanitizeFilename(null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("The uploaded file has no filename.");
+    }
+
+    @Test
+    @DisplayName("sanitizeFilename() rejects path traversal as a client error (IllegalArgumentException)")
     void sanitizeFilename_PathTraversal_ThrowsException() {
         assertThatThrownBy(() -> objectStorageService.sanitizeFilename("../secret.txt"))
-                .isInstanceOf(FileStorageException.class)
+                .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Filename contains invalid path sequence");
     }
 

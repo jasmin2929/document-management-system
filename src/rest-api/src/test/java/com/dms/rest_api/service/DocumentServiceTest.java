@@ -337,6 +337,22 @@ class DocumentServiceTest {
 
             verify(documentRepository, never()).save(any());
         }
+
+        @Test
+        @DisplayName("result without document ID is ignored without touching the database")
+        void missingDocumentId_IsIgnored() {
+            documentService.applyOcrResult(new OcrResultDto(null, Document.DocumentStatus.PROCESSED, "text"));
+
+            verifyNoInteractions(documentRepository);
+        }
+
+        @Test
+        @DisplayName("result without status is ignored (status column is NOT NULL)")
+        void missingStatus_IsIgnored() {
+            documentService.applyOcrResult(new OcrResultDto(1L, null, "text"));
+
+            verifyNoInteractions(documentRepository);
+        }
     }
 
     @Nested
