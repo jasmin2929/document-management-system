@@ -622,6 +622,20 @@ a.doc-row:hover {
   gap: 8px;
 }
 
+.summary-card {
+  padding: 20px 24px;
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.summary-card__text {
+  margin: 0;
+  max-width: 75ch;
+  line-height: 1.6;
+}
+
 .detail-grid {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
