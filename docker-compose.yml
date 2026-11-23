@@ -161,7 +161,7 @@ services:
       GENAI_RESULT_QUEUE: genai-result-queue
       LOG_LEVEL: INFO
       GEMINI_API_KEY: ${GEMINI_API_KEY:?Set GEMINI_API_KEY in .env (see .env.example)}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash-lite}
 
   rest-api:
     build:

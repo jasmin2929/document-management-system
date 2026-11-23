@@ -29,7 +29,7 @@ class GeminiClientTest(unittest.TestCase):
     def make(self, responses, retries=3, max_chars=1000):
         self.urlopen = MagicMock(side_effect=responses)
         self.sleep = MagicMock()
-        return GeminiClient("secret-key", "gemini-3.8-flash", "https://api.test/v1beta", 5.0, retries,
+        return GeminiClient("secret-key", "gemini-3.5-flash-lite", "https://api.test/v1beta", 5.0, retries,
                             max_chars, urlopen=self.urlopen, sleep=self.sleep)
 
     def test_returns_summary_and_sends_key_as_header_not_in_url(self):
@@ -38,7 +38,7 @@ class GeminiClientTest(unittest.TestCase):
         self.assertEqual("Summary.", client.summarize("some document text"))
 
         request = self.urlopen.call_args.args[0]
-        self.assertEqual("https://api.test/v1beta/models/gemini-3.8-flash:generateContent", request.full_url)
+        self.assertEqual("https://api.test/v1beta/models/gemini-3.5-flash-lite:generateContent", request.full_url)
         self.assertEqual("secret-key", request.get_header("X-goog-api-key"))
         self.assertIn("some document text", json.loads(request.data)["contents"][0]["parts"][0]["text"])
 
