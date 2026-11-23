@@ -77,7 +77,7 @@ def load_settings(env: Optional[Mapping[str, str]] = None) -> Settings:
             f"LOG_LEVEL must be one of {sorted(_VALID_LOG_LEVELS)}, got '{log_level}'"
         )
 
-    # Credentials have no defaults on purpose: no passwords in the code.
+    # Credentials have no defaults on purpose: no passwords in the code
     return Settings(
         rabbitmq_host=env.get("RABBITMQ_HOST", "rabbitmq"),
         rabbitmq_port=_get_int(env, "RABBITMQ_PORT", 5672, minimum=1),
