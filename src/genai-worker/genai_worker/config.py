@@ -20,7 +20,7 @@ class Settings:
     connect_retry_delay: float = 3.0
     genai_queue: str = "genai-queue"
     genai_result_queue: str = "genai-result-queue"
-    gemini_model: str = "gemini-3.8-flash"
+    gemini_model: str = "gemini-3.5-flash-lite"
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     gemini_timeout_seconds: float = 60.0
     gemini_max_retries: int = 3
@@ -65,9 +65,9 @@ def load_settings(env: Optional[Mapping[str, str]] = None) -> Settings:
             f"LOG_LEVEL must be one of {sorted(_VALID_LOG_LEVELS)}, got '{log_level}'"
         )
 
-    model = env.get("GEMINI_MODEL", "gemini-3.8-flash").strip()
+    model = env.get("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
     if not re.fullmatch(r"[A-Za-z0-9._-]+", model):
-        raise ConfigurationException(f"GEMINI_MODEL must look like 'gemini-3.8-flash', got '{model}'")
+        raise ConfigurationException(f"GEMINI_MODEL must look like 'gemini-3.5-flash-lite', got '{model}'")
 
     base_url = env.get("GEMINI_BASE_URL", Settings.gemini_base_url).strip().rstrip("/")
     if not re.fullmatch(r"https?://[^\s]+", base_url):

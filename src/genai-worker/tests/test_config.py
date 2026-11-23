@@ -11,7 +11,7 @@ class LoadSettingsTest(unittest.TestCase):
         s = load_settings(ENV)
         self.assertEqual("genai-queue", s.genai_queue)
         self.assertEqual("genai-result-queue", s.genai_result_queue)
-        self.assertEqual("gemini-3.8-flash", s.gemini_model)
+        self.assertEqual("gemini-3.5-flash-lite", s.gemini_model)
         self.assertEqual("key", s.gemini_api_key)
 
     def test_overrides(self):
