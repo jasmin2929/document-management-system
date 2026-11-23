@@ -139,6 +139,13 @@ function DocumentDetail({ id }) {
         </div>
       </div>
 
+      <section className="card summary-card" aria-labelledby="summary-heading">
+        <div className="details-panel__heading" id="summary-heading">
+          Summary
+        </div>
+        <p className={doc.summary ? 'summary-card__text' : 'muted'}>{doc.summary || summaryPlaceholder(doc.status)}</p>
+      </section>
+
       <div className="detail-grid">
         <div className="card preview">
           {isPdf ? (
@@ -214,6 +221,14 @@ function DocumentDetail({ id }) {
       </div>
     </main>
   );
+}
+
+function summaryPlaceholder(status) {
+  if (status === 'PENDING' || status === 'PROCESSING') {
+    return 'The summary is created after text recognition. Reload the page in a few seconds.';
+  }
+  if (status === 'FAILED') return 'No summary: text recognition failed for this document.';
+  return 'No summary available yet. Reload the page in a few seconds.';
 }
 
 function Breadcrumb({ current }) {
